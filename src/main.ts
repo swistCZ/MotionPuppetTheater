@@ -71,7 +71,7 @@ class AppManager {
         btnCamera.textContent = '📷 Kamera';
         btnCamera.classList.remove('btn-secondary');
         btnCamera.classList.add('btn-primary');
-        this.showStatus('Kamera bola zastavena.');
+        this.showStatus('Kamera byla zastavena.');
       } else {
         btnCamera.textContent = '⏸️ Zastavit';
         btnCamera.classList.remove('btn-primary');
@@ -156,34 +156,46 @@ class AppManager {
       this.renderer.setBackgroundColor(hexValue);
     });
 
-    // Custom Background Upload
-    uploadBg.addEventListener('change', async (e) => {
+    // Custom Background Upload via FileReader Data URL
+    uploadBg.addEventListener('change', (e) => {
       const file = (e.target as HTMLInputElement).files?.[0];
       if (file) {
-        const url = URL.createObjectURL(file);
-        await this.renderer.setCustomBackgroundUrl(url);
-        this.showStatus('Vlastní obrázek pozadí načten.');
-        setTimeout(() => this.hideStatus(), 3000);
+        const reader = new FileReader();
+        reader.onload = async (evt) => {
+          const dataUrl = evt.target?.result as string;
+          if (dataUrl) {
+            await this.renderer.setCustomBackgroundDataUrl(dataUrl);
+            this.showStatus('Vlastní obrázek pozadí byl úspěšně načten!');
+            setTimeout(() => this.hideStatus(), 3000);
+          }
+        };
+        reader.readAsDataURL(file);
       }
     });
 
     // Custom Puppet Uploads
-    uploadLeft.addEventListener('change', async (e) => {
-      await this.handleCustomPuppetUpload('Left', e.target as HTMLInputElement);
+    uploadLeft.addEventListener('change', (e) => {
+      this.handleCustomPuppetUpload('Left', e.target as HTMLInputElement);
     });
 
-    uploadRight.addEventListener('change', async (e) => {
-      await this.handleCustomPuppetUpload('Right', e.target as HTMLInputElement);
+    uploadRight.addEventListener('change', (e) => {
+      this.handleCustomPuppetUpload('Right', e.target as HTMLInputElement);
     });
   }
 
-  private async handleCustomPuppetUpload(handType: 'Left' | 'Right', input: HTMLInputElement): Promise<void> {
+  private handleCustomPuppetUpload(handType: 'Left' | 'Right', input: HTMLInputElement): void {
     const file = input.files?.[0];
     if (file) {
-      const url = URL.createObjectURL(file);
-      await this.renderer.setCustomPuppetUrl(handType, url);
-      this.showStatus(`Vlastní PNG obrázek pro ${handType === 'Left' ? 'Levou' : 'Pravou'} loutku načten.`);
-      setTimeout(() => this.hideStatus(), 3000);
+      const reader = new FileReader();
+      reader.onload = async (evt) => {
+        const dataUrl = evt.target?.result as string;
+        if (dataUrl) {
+          await this.renderer.setCustomPuppetDataUrl(handType, dataUrl);
+          this.showStatus(`Vlastní PNG obrázek pro ${handType === 'Left' ? 'Levou' : 'Pravou'} loutku načten.`);
+          setTimeout(() => this.hideStatus(), 3000);
+        }
+      };
+      reader.readAsDataURL(file);
     }
   }
 

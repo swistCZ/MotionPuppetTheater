@@ -1,4 +1,4 @@
-import { Application, Container, Sprite, Graphics, Assets } from 'pixi.js';
+import { Application, Container, Sprite, Graphics, Assets, Texture } from 'pixi.js';
 import { HandState } from './gestures';
 
 export type PuppetPreset = 'dragon' | 'bunny' | 'fox' | 'robot' | 'cat' | 'custom';
@@ -30,6 +30,7 @@ export class PuppetRenderer {
   // Background
   private bgGraphics: Graphics;
   private bgSprite: Sprite | null = null;
+  private currentBgColorHex: number = 0x2d3748;
 
   private width: number;
   private height: number;
@@ -56,9 +57,9 @@ export class PuppetRenderer {
 
     parentElement.appendChild(this.app.canvas as HTMLCanvasElement);
 
-    // Add background first
+    // Add background graphics
     this.app.stage.addChild(this.bgGraphics);
-    this.drawDefaultBackground(0x2d3748);
+    this.drawDefaultBackground(this.currentBgColorHex);
 
     // Add puppet containers
     this.app.stage.addChild(this.leftPuppet.container);
@@ -77,29 +78,42 @@ export class PuppetRenderer {
     this.width = width;
     this.height = height;
     this.app.renderer.resize(width, height);
-    this.drawDefaultBackground(0x2d3748);
-    if (this.bgSprite) {
+
+    if (this.bgSprite && this.bgSprite.visible) {
       this.bgSprite.width = this.width;
       this.bgSprite.height = this.height;
+    } else {
+      this.drawDefaultBackground(this.currentBgColorHex);
     }
   }
 
   public setBackgroundColor(colorHex: number): void {
+    this.currentBgColorHex = colorHex;
     if (this.bgSprite) {
       this.bgSprite.visible = false;
     }
     this.drawDefaultBackground(colorHex);
   }
 
-  public async setCustomBackgroundUrl(url: string): Promise<void> {
+  public async setCustomBackgroundDataUrl(dataUrl: string): Promise<void> {
     try {
-      const texture = await Assets.load(url);
+      // Clear solid color so it does not obscure the sprite
+      this.bgGraphics.clear();
+
+      let texture: Texture;
+      try {
+        texture = await Assets.load(dataUrl);
+      } catch {
+        texture = Texture.from(dataUrl);
+      }
+
       if (!this.bgSprite) {
         this.bgSprite = new Sprite(texture);
         this.app.stage.addChildAt(this.bgSprite, 0);
       } else {
         this.bgSprite.texture = texture;
       }
+
       this.bgSprite.width = this.width;
       this.bgSprite.height = this.height;
       this.bgSprite.visible = true;
@@ -182,9 +196,15 @@ export class PuppetRenderer {
     puppet.container.position.set(-500, -500);
   }
 
-  public async setCustomPuppetUrl(handType: 'Left' | 'Right', url: string): Promise<void> {
+  public async setCustomPuppetDataUrl(handType: 'Left' | 'Right', dataUrl: string): Promise<void> {
     try {
-      const texture = await Assets.load(url);
+      let texture: Texture;
+      try {
+        texture = await Assets.load(dataUrl);
+      } catch {
+        texture = Texture.from(dataUrl);
+      }
+
       const isLeft = handType === 'Left';
       const puppet = isLeft ? this.leftPuppet : this.rightPuppet;
       puppet.preset = 'custom';
