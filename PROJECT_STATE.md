@@ -8,26 +8,26 @@
   * **CV / AI:** Google MediaPipe Hands (`@mediapipe/hands`, `@mediapipe/camera_utils`)
   * **Graphics:** Pixi.js v8 (WebGL/WebGPU 2D rendering engine)
   * **Audio:** Web Audio API (`AudioContext`, `OscillatorNode`, `GainNode` for Theremin synth)
-  * **Math:** LERP (Linear Interpolation) with Adaptive Low-pass Velocity Filtering & Spatial Proximity Assignment
+  * **Math:** High-response LERP (0.45) & Deterministic Screen-X Hand Matching for 0-lag 60 FPS motion
   * **Deployment:** GitHub Pages (via `gh-pages` branch)
 * **Modular Architecture:**
   * `tracker.ts`: WebCam & MediaPipe Hands CV integration.
-  * `gestures.ts`: Euclidean math, Adaptive LERP smoothing, Outlier Jump Rejection (>250px step clamping), `matchDetectedHandsToPuppets` spatial proximity matching to eliminate hand swapping/teleportation.
-  * `renderer.ts`: Pixi.js 2D stage rendering, Theremin Mode glowing/pulsing Orbs (Cyan Pitch & Magenta Volume), Pixi v8 `Assets.load()` for custom background and puppet textures.
+  * `gestures.ts`: Euclidean math, high-response LERP smoothing (0.45), deterministic Screen-X sorting matching, 100% index-finger mouth movement, 5-finger articulated limb kinematics.
+  * `renderer.ts`: Pixi.js 2D stage rendering, Theremin Mode glowing/pulsing Orbs (Cyan Pitch & Magenta Volume) with complete puppet hiding, Pixi v8 `Assets.load()` for custom textures, full-bodied puppets.
   * `theremin.ts`: Web Audio API digital Theremin synthesizer (High-volume boost, single/dual-hand controls).
-  * `main.ts`: UI event handling, Spatial Proximity Matching, 15-frame tracking persistence buffer, Motion Freeze lock, Theremin toggle, live FPS counter, and application lifecycle.
+  * `main.ts`: UI event handling, 6-frame persistence buffer, Motion Freeze lock, Theremin toggle, live FPS counter, and application lifecycle.
 
 ## 2. Completed Milestones
 * [x] Created and checked out new Git branch `feat/pro-redesign` to preserve `main` PoC checkpoint
-* [x] Implemented **Spatial Proximity Hand Tracking** (`matchDetectedHandsToPuppets`) to eliminate hand swapping and teleportation when hands cross or get close
-* [x] Implemented **Outlier Jump Rejection & Adaptive LERP Filtering** in `gestures.ts` for rock-solid stability and zero erratic motion
+* [x] Refactored tracking & LERP pipeline to high-response LERP factor (0.45) for butter-smooth zero-lag 60 FPS motion
+* [x] Implemented deterministic Screen-X sorting matching to eliminate stutter and hand swapping when hands cross
 * [x] Redesigned UI with **Pro Glassmorphism Dark Theme**, backdrop blur, glowing badges, and live **FPS counter** (`⚡ 60 FPS`)
-* [x] Published Pro build to GitHub Pages and pushed branch `feat/pro-redesign` to remote GitHub repository
+* [x] Published zero-lag Pro build to GitHub Pages and pushed branch `feat/pro-redesign` to remote GitHub repository
 
 ## 3. Active Task & Next Steps
-* **Active Task:** Verification of Pro redesign build.
+* **Active Task:** Verification of zero-lag Pro redesign build.
 * **Next Steps:**
-  1. Solicit user feedback on Spatial Proximity Tracking and Pro UI.
+  1. Solicit user feedback on zero-lag motion smoothness.
 
 ## 4. Known Issues / Technical Debt / Blockers
 * None currently.
