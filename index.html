@@ -3,15 +3,18 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Web-Based Motion Puppet Theater</title>
-    <script type="module" crossorigin src="./assets/index-H0RD8cuW.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-LDxYqtFY.css">
+    <title>Motion Puppet Theater Pro</title>
+    <script type="module" crossorigin src="./assets/index-DYBzU-hi.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-DlbruMl0.css">
   </head>
   <body>
     <div id="app">
-      <!-- Compact Single-Line Control Bar -->
+      <!-- Glassmorphism Pro Control Bar -->
       <header class="control-panel">
-        <h1 class="title">🎭 Puppet Theater</h1>
+        <div class="brand">
+          <h1 class="title">🎭 Puppet Theater Pro</h1>
+          <span id="fps-badge" class="fps-badge">⚡ -- FPS</span>
+        </div>
         
         <div class="control-group">
           <button id="btn-camera" class="btn btn-primary" title="Spustit/Zastavit kameru">📷 Kamera</button>
@@ -51,16 +54,16 @@
         </div>
 
         <div class="control-group">
-          <label for="bg-color" class="compact-label">Pozadí:</label>
+          <label for="bg-color" class="compact-label">Scéna:</label>
           <select id="bg-color" class="select-input">
-            <option value="0x1e1e2e">Tmavé</option>
+            <option value="0x1e1e2e">Tmavá</option>
             <option value="0x2d3748">Břidlice</option>
-            <option value="0x1a202c">Černé</option>
-            <option value="0x2b6cb0">Modré</option>
-            <option value="0x2f855a">Zelené</option>
+            <option value="0x1a202c">Černá</option>
+            <option value="0x2b6cb0">Modrá</option>
+            <option value="0x2f855a">Zelená</option>
           </select>
           <label class="file-upload-btn btn-secondary" title="Nahrát vlastní obrázek pozadí">
-            🖼️ Vlastní
+            🖼️ Pozadí
             <input type="file" id="upload-bg" accept="image/*" />
           </label>
         </div>
@@ -77,7 +80,7 @@
         <!-- Debug Canvas Overlay for Landmarks -->
         <canvas id="debug-canvas" class="debug-overlay"></canvas>
 
-        <!-- Info / Error Banner -->
+        <!-- Status Banner -->
         <div id="status-banner" class="status-banner hidden"></div>
       </main>
     </div>
