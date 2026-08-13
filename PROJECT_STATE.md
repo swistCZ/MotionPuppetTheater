@@ -7,6 +7,7 @@
   * **CV / AI:** Google MediaPipe Hands (`@mediapipe/hands`, `@mediapipe/camera_utils`)
   * **Graphics:** Pixi.js v8 (WebGL/WebGPU 2D rendering engine)
   * **Math:** LERP (Linear Interpolation) for jitter-free hand coordinate mapping
+  * **Deployment:** GitHub Pages (via GitHub Actions & `gh-pages` npm package)
 * **Modular Architecture:**
   * `tracker.ts`: WebCam & MediaPipe Hands CV integration.
   * `gestures.ts`: Euclidean math, rotation angles, LERP smoothing, pinch gesture detection (with unit tests in `gestures.test.ts`).
@@ -21,13 +22,14 @@
 * [x] Implemented `tracker.ts` for camera stream and MediaPipe Hands tracking
 * [x] Implemented `renderer.ts` for Pixi.js 2D puppet rendering with open/closed mouth states
 * [x] Implemented `main.ts` and `index.html` UI overlay with controls for debug view, background selection, custom uploads
+* [x] Configured GitHub Actions CI/CD workflow (`.github/workflows/deploy.yml`) and `gh-pages` deployment script
 * [x] Verified full build and unit tests pass (`npm test` & `npm run build`)
 
 ## 3. Active Task & Next Steps
-* **Active Task:** Verification and delivery of initial prototype.
+* **Active Task:** GitHub Pages deployment.
 * **Next Steps:**
-  1. Solicit user feedback on prototype functionality.
-  2. Add additional puppet sprite options or custom gesture features if requested.
+  1. Authenticate GitHub CLI (`gh auth login`) or push to user's remote repository.
+  2. Solicit user feedback on live prototype.
 
 ## 4. Known Issues / Technical Debt / Blockers
 * None currently.

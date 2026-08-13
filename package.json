@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "deploy": "npm run build && gh-pages -d dist"
   },
   "dependencies": {
     "@mediapipe/camera_utils": "latest",
@@ -16,6 +17,7 @@
     "pixi.js": "^8.8.0"
   },
   "devDependencies": {
+    "gh-pages": "^6.3.0",
     "typescript": "^5.7.3",
     "vite": "^6.1.1",
     "vitest": "^3.0.5"
