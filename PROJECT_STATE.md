@@ -5,26 +5,29 @@
 * **Tech Stack:**
   * **Frontend:** HTML5, CSS3, TypeScript, Vite
   * **CV / AI:** Google MediaPipe Hands (`@mediapipe/hands`, `@mediapipe/camera_utils`)
-  * **Graphics:** Pixi.js (WebGL 2D rendering engine)
+  * **Graphics:** Pixi.js v8 (WebGL/WebGPU 2D rendering engine)
   * **Math:** LERP (Linear Interpolation) for jitter-free hand coordinate mapping
-* **Superpowers & Tools Configured:**
-  * Node.js v22 & npm installed locally
-  * `ripgrep` & `gh` CLI installed
-  * OpenCode Skills created (`tdd-workflow`, `systematic-debugging`, `code-review`, `git-discipline`, `project-state-persistence`)
-  * MCP Servers configured (`github`, `playwright`, `fetch`)
+* **Modular Architecture:**
+  * `tracker.ts`: WebCam & MediaPipe Hands CV integration.
+  * `gestures.ts`: Euclidean math, rotation angles, LERP smoothing, pinch gesture detection (with unit tests in `gestures.test.ts`).
+  * `renderer.ts`: Pixi.js 2D stage rendering, procedural puppet sprite generation (open/closed mouth states), custom PNG texture uploads, and background switching.
+  * `main.ts`: UI event handling, debug landmark canvas overlay, and application lifecycle.
 
 ## 2. Completed Milestones
 * [x] Environment & Superpowers Setup (Node.js, npm, ripgrep, gh CLI, OpenCode Skills, MCP configuration)
 * [x] Git Repository Initialization & `.gitignore` configuration
-* [x] Initial `PROJECT_STATE.md` setup
+* [x] Scaffolded Vite + TypeScript project structure with `pixi.js`, `@mediapipe/hands`, `@mediapipe/camera_utils`, `vitest`
+* [x] Implemented `gestures.ts` with unit tests for LERP, pinch distance, and rotation
+* [x] Implemented `tracker.ts` for camera stream and MediaPipe Hands tracking
+* [x] Implemented `renderer.ts` for Pixi.js 2D puppet rendering with open/closed mouth states
+* [x] Implemented `main.ts` and `index.html` UI overlay with controls for debug view, background selection, custom uploads
+* [x] Verified full build and unit tests pass (`npm test` & `npm run build`)
 
 ## 3. Active Task & Next Steps
-* **Active Task:** Scaffold minimal Vite + TypeScript project structure for Motion Puppet Theater.
+* **Active Task:** Verification and delivery of initial prototype.
 * **Next Steps:**
-  1. Install dependencies (`vite`, `typescript`, `pixi.js`, `@mediapipe/hands`, `@mediapipe/camera_utils`).
-  2. Implement camera feed and debug landmark rendering (`tracker.js`/`tracker.ts`).
-  3. Implement LERP math smoothing and pinch gesture detection (`gestures.ts`).
-  4. Integrate Pixi.js sprite renderer (`renderer.ts`).
+  1. Solicit user feedback on prototype functionality.
+  2. Add additional puppet sprite options or custom gesture features if requested.
 
 ## 4. Known Issues / Technical Debt / Blockers
 * None currently.

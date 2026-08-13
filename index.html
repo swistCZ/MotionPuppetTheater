@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="cs">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Web-Based Motion Puppet Theater</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <!-- Top Control Bar -->
+      <header class="control-panel">
+        <h1 class="title">🎭 Motion Puppet Theater</h1>
+        
+        <div class="control-group">
+          <button id="btn-camera" class="btn btn-primary">📷 Spustit Kameru</button>
+          <button id="btn-toggle-debug" class="btn btn-secondary">🔍 Debug Overlay</button>
+        </div>
+
+        <div class="control-group">
+          <label for="bg-color">Pozadí:</label>
+          <select id="bg-color" class="select-input">
+            <option value="0x1e1e2e">Tmavé</option>
+            <option value="0x2d3748">Břidlicové</option>
+            <option value="0x1a202c">Černé</option>
+            <option value="0x2b6cb0">Modré Scénické</option>
+            <option value="0x2f855a">Zelená Scéna</option>
+          </select>
+          <label class="file-upload-btn btn-secondary">
+            🖼️ Vlastní Pozadí
+            <input type="file" id="upload-bg" accept="image/*" />
+          </label>
+        </div>
+
+        <div class="control-group">
+          <label class="file-upload-btn btn-secondary">
+            👹 Loutka 1 (Levá)
+            <input type="file" id="upload-left-closed" accept="image/*" title="Zavřená pusa" />
+          </label>
+          <label class="file-upload-btn btn-secondary">
+            🐰 Loutka 2 (Pravá)
+            <input type="file" id="upload-right-closed" accept="image/*" title="Zavřená pusa" />
+          </label>
+        </div>
+      </header>
+
+      <!-- Main Stage Container -->
+      <main class="stage-container">
+        <!-- PixiJS Canvas Parent -->
+        <div id="pixi-viewport"></div>
+
+        <!-- Hidden Video Element for MediaPipe input -->
+        <video id="webcam-video" playsinline muted style="display: none;"></video>
+
+        <!-- Debug Canvas Overlay for Landmarks -->
+        <canvas id="debug-canvas" class="debug-overlay"></canvas>
+
+        <!-- Info / Error Banner -->
+        <div id="status-banner" class="status-banner hidden"></div>
+      </main>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
