@@ -262,14 +262,14 @@ class AppManager {
 
         const prevPos = this.prevPositions.get(handType);
 
-        // Process landmarks & gestures
+        // Process landmarks & gestures with responsive LERP alpha 0.45
         const state: HandState = processHandLandmarks(
           landmarks,
           handType,
           width,
           height,
           prevPos,
-          0.35 // LERP alpha
+          0.45
         );
 
         if (handType === 'Left') {
@@ -330,7 +330,7 @@ class AppManager {
           const count = (this.missingFrames.get(hand) || 0) + 1;
           this.missingFrames.set(hand, count);
 
-          if (count > 15) { // Hide only after 15 consecutive missing frames (~0.5 sec)
+          if (count > 6) { // Hide after 6 consecutive missing frames (~0.2 sec)
             this.renderer.hideHand(hand);
             this.prevPositions.delete(hand);
           }

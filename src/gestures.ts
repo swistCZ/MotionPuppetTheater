@@ -21,7 +21,7 @@ export interface HandState {
   handType: 'Left' | 'Right';
   wristPosition: Point2D; // Normalized (0 to 1, mirrored X)
   rawPositionPixels: Point2D; // Canvas pixel coordinates
-  smoothedPosition: Point2D; // LERP smoothed position
+  smoothedPosition: Point2D; // Smooth mapped position
   pinchDistance: number; // Normalized distance between thumb and index tips
   isPinching: boolean; // True if mouth closed
   mouthOpenRatio: number; // Driven 100% exclusively by index finger flexion
@@ -71,84 +71,42 @@ export function calculateAngleRadians(p1: Point2D, p2: Point2D): number {
 }
 
 /**
- * Matches new MediaPipe hand detections to Puppet slots (Left / Right) based on spatial proximity
- * to eliminate hand swapping/teleportation when hands get close or cross each other.
+ * Deterministic, instant X-sorting for detected hands (Leftmost on screen -> Left Puppet, Rightmost -> Right Puppet).
+ * Zero-latency, zero-stutter matching.
  */
 export function matchDetectedHandsToPuppets(
   detectedHands: DetectedHandInput[],
-  lastLeftPos?: Point2D,
-  lastRightPos?: Point2D,
+  _lastLeftPos?: Point2D,
+  _lastRightPos?: Point2D,
   canvasWidth: number = 1000,
-  canvasHeight: number = 800
+  _canvasHeight: number = 800
 ): MatchedHandOutput[] {
   if (detectedHands.length === 0) return [];
 
-  // Convert raw palm centers to canvas pixel coordinates (mirrored X)
+  // Convert raw palm centers to mirrored screen X pixels
   const handPixels = detectedHands.map((dh) => {
     const palm = dh.landmarks[9] || dh.landmarks[0] || { x: 0.5, y: 0.5, z: 0 };
     return {
-      x: (1.0 - palm.x) * canvasWidth,
-      y: palm.y * canvasHeight,
+      screenX: (1.0 - palm.x) * canvasWidth,
       mediaPipeLabel: dh.mediaPipeLabel,
       landmarks: dh.landmarks,
     };
   });
 
-  if (detectedHands.length === 1) {
+  if (handPixels.length === 1) {
     const h = handPixels[0];
-    let assignedSlot: 'Left' | 'Right' = h.mediaPipeLabel;
-
-    // Spatial proximity override if previous positions exist
-    if (lastLeftPos && lastRightPos) {
-      const distToLeft = calculateDistance2D(h, lastLeftPos);
-      const distToRight = calculateDistance2D(h, lastRightPos);
-      assignedSlot = distToLeft <= distToRight ? 'Left' : 'Right';
-    } else if (lastLeftPos) {
-      const distToLeft = calculateDistance2D(h, lastLeftPos);
-      assignedSlot = distToLeft < 350 ? 'Left' : h.mediaPipeLabel;
-    } else if (lastRightPos) {
-      const distToRight = calculateDistance2D(h, lastRightPos);
-      assignedSlot = distToRight < 350 ? 'Right' : h.mediaPipeLabel;
-    }
-
-    return [{ puppetSlot: assignedSlot, landmarks: h.landmarks }];
+    // Assign slot based on screen side (left half vs right half)
+    const slot: 'Left' | 'Right' = h.screenX < canvasWidth * 0.5 ? 'Left' : 'Right';
+    return [{ puppetSlot: slot, landmarks: h.landmarks }];
   }
 
-  // 2 hands detected: compute distances to Left and Right puppet positions
-  const h0 = handPixels[0];
-  const h1 = handPixels[1];
+  // Sort hands by screen X (ascending)
+  handPixels.sort((a, b) => a.screenX - b.screenX);
 
-  if (lastLeftPos && lastRightPos) {
-    // Option A: h0 -> Left, h1 -> Right
-    const costA = calculateDistance2D(h0, lastLeftPos) + calculateDistance2D(h1, lastRightPos);
-    // Option B: h0 -> Right, h1 -> Left
-    const costB = calculateDistance2D(h0, lastRightPos) + calculateDistance2D(h1, lastLeftPos);
-
-    if (costA <= costB) {
-      return [
-        { puppetSlot: 'Left', landmarks: h0.landmarks },
-        { puppetSlot: 'Right', landmarks: h1.landmarks },
-      ];
-    } else {
-      return [
-        { puppetSlot: 'Right', landmarks: h0.landmarks },
-        { puppetSlot: 'Left', landmarks: h1.landmarks },
-      ];
-    }
-  }
-
-  // Fallback: assign left-most X coordinate on screen to Left Puppet, right-most X to Right Puppet
-  if (h0.x <= h1.x) {
-    return [
-      { puppetSlot: 'Left', landmarks: h0.landmarks },
-      { puppetSlot: 'Right', landmarks: h1.landmarks },
-    ];
-  } else {
-    return [
-      { puppetSlot: 'Right', landmarks: h0.landmarks },
-      { puppetSlot: 'Left', landmarks: h1.landmarks },
-    ];
-  }
+  return [
+    { puppetSlot: 'Left', landmarks: handPixels[0].landmarks },
+    { puppetSlot: 'Right', landmarks: handPixels[1].landmarks },
+  ];
 }
 
 /**
@@ -160,7 +118,7 @@ export function processHandLandmarks(
   canvasWidth: number,
   canvasHeight: number,
   prevSmoothedPos?: Point2D,
-  alpha: number = 0.35,
+  alpha: number = 0.45,
   pinchThreshold: number = 0.05
 ): HandState {
   // Mirror X coordinates for natural webcam interaction
@@ -188,24 +146,12 @@ export function processHandLandmarks(
     y: palmCenter.y * canvasHeight,
   };
 
-  // Adaptive LERP + Outlier Jump Rejection
+  // High-performance responsive LERP smoothing (alpha = 0.45)
   let smoothedPosition: Point2D;
   if (prevSmoothedPos) {
-    const distDelta = calculateDistance2D(prevSmoothedPos, rawPositionPixels);
-
-    // Reject erratic jumps (> 250px in 1 frame) to stop teleporting
-    if (distDelta > 250) {
-      const scaleStep = 250 / distDelta;
-      rawPositionPixels.x = prevSmoothedPos.x + (rawPositionPixels.x - prevSmoothedPos.x) * scaleStep;
-      rawPositionPixels.y = prevSmoothedPos.y + (rawPositionPixels.y - prevSmoothedPos.y) * scaleStep;
-    }
-
-    // Adaptive alpha based on base alpha parameter and movement velocity
-    const adaptiveAlpha = clamp(alpha * 0.5 + (distDelta / 150) * 0.25, 0.15, 0.6);
-
     smoothedPosition = {
-      x: lerp(prevSmoothedPos.x, rawPositionPixels.x, adaptiveAlpha),
-      y: lerp(prevSmoothedPos.y, rawPositionPixels.y, adaptiveAlpha),
+      x: lerp(prevSmoothedPos.x, rawPositionPixels.x, alpha),
+      y: lerp(prevSmoothedPos.y, rawPositionPixels.y, alpha),
     };
   } else {
     smoothedPosition = { ...rawPositionPixels };
@@ -241,7 +187,7 @@ export function processHandLandmarks(
   const indexLengthMax = calculateDistance2D({ x: indexPip.x, y: indexPip.y }, { x: indexMcp.x, y: indexMcp.y }) * 2.2;
   const mouthOpenRatio = clamp((indexLengthMax - indexLengthCurrent) / (indexLengthMax * 0.5), 0.0, 1.0);
 
-  // Pinch distance kept only for reference if needed
+  // Pinch distance
   const pinchDistance = calculateDistance2D(
     { x: thumbTip.x, y: thumbTip.y },
     { x: indexTip.x, y: indexTip.y }
