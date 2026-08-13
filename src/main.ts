@@ -25,10 +25,9 @@ class AppManager {
   private showDebugOverlay: boolean = false;
   private isMotionFrozen: boolean = false;
 
-  // FPS calculation
+  // Real-time Display FPS Loop
   private lastFrameTime: number = performance.now();
   private frameCount: number = 0;
-  private currentFps: number = 60;
 
   // Persistence buffers to eliminate flickering when hand detection drops briefly
   private prevPositions: Map<string, Point2D> = new Map();
@@ -62,6 +61,15 @@ class AppManager {
     window.addEventListener('resize', () => this.onWindowResize());
 
     this.setupUIControls();
+    this.startDisplayLoop();
+  }
+
+  private startDisplayLoop(): void {
+    const loop = () => {
+      this.updateFps();
+      requestAnimationFrame(loop);
+    };
+    requestAnimationFrame(loop);
   }
 
   private setupUIControls(): void {
@@ -215,8 +223,6 @@ class AppManager {
   }
 
   private handleTrackingResults(results: Results): void {
-    this.updateFps();
-
     const width = this.debugCanvas.width;
     const height = this.debugCanvas.height;
 
@@ -323,7 +329,7 @@ class AppManager {
       this.renderer.updateThereminVisuals(leftHandState, rightHandState, freq, volRatio);
     }
 
-    // Handle missing hand frames with 15-frame persistence buffer to eliminate flickering
+    // Handle missing hand frames
     if (!this.isMotionFrozen) {
       (['Left', 'Right'] as const).forEach((hand) => {
         if (!detectedHands.has(hand)) {
@@ -349,8 +355,8 @@ class AppManager {
     const elapsed = now - this.lastFrameTime;
 
     if (elapsed >= 1000) {
-      this.currentFps = Math.round((this.frameCount * 1000) / elapsed);
-      this.fpsBadge.textContent = `⚡ ${this.currentFps} FPS`;
+      const currentFps = Math.round((this.frameCount * 1000) / elapsed);
+      this.fpsBadge.textContent = `⚡ ${currentFps} FPS`;
       this.frameCount = 0;
       this.lastFrameTime = now;
     }

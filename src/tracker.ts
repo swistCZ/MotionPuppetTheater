@@ -17,7 +17,7 @@ export class HandTracker {
   }
 
   /**
-   * Initializes MediaPipe Hands instance with configurations.
+   * Initializes MediaPipe Hands instance with configurations optimized for 60 FPS.
    */
   public async initialize(): Promise<void> {
     this.hands = new Hands({
@@ -28,7 +28,7 @@ export class HandTracker {
 
     const options: Options = {
       maxNumHands: 2,
-      modelComplexity: 1,
+      modelComplexity: 0, // Fast model for 60 FPS real-time tracking
       minDetectionConfidence: 0.5,
       minTrackingConfidence: 0.5,
     };
@@ -60,8 +60,8 @@ export class HandTracker {
             await this.hands.send({ image: this.videoElement });
           }
         },
-        width: 1280,
-        height: 720,
+        width: 640,
+        height: 480,
       });
 
       this.isRunning = true;
