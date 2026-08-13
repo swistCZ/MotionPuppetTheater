@@ -1,4 +1,4 @@
-import { Application, Container, Sprite, Texture, Graphics } from 'pixi.js';
+import { Application, Container, Sprite, Graphics, Assets } from 'pixi.js';
 import { HandState } from './gestures';
 
 export type PuppetPreset = 'dragon' | 'bunny' | 'fox' | 'robot' | 'cat' | 'custom';
@@ -78,6 +78,10 @@ export class PuppetRenderer {
     this.height = height;
     this.app.renderer.resize(width, height);
     this.drawDefaultBackground(0x2d3748);
+    if (this.bgSprite) {
+      this.bgSprite.width = this.width;
+      this.bgSprite.height = this.height;
+    }
   }
 
   public setBackgroundColor(colorHex: number): void {
@@ -87,16 +91,21 @@ export class PuppetRenderer {
     this.drawDefaultBackground(colorHex);
   }
 
-  public setCustomBackgroundTexture(texture: Texture): void {
-    if (!this.bgSprite) {
-      this.bgSprite = new Sprite(texture);
-      this.app.stage.addChildAt(this.bgSprite, 0);
-    } else {
-      this.bgSprite.texture = texture;
+  public async setCustomBackgroundUrl(url: string): Promise<void> {
+    try {
+      const texture = await Assets.load(url);
+      if (!this.bgSprite) {
+        this.bgSprite = new Sprite(texture);
+        this.app.stage.addChildAt(this.bgSprite, 0);
+      } else {
+        this.bgSprite.texture = texture;
+      }
+      this.bgSprite.width = this.width;
+      this.bgSprite.height = this.height;
+      this.bgSprite.visible = true;
+    } catch (err) {
+      console.error('Failed to load custom background image:', err);
     }
-    this.bgSprite.width = this.width;
-    this.bgSprite.height = this.height;
-    this.bgSprite.visible = true;
   }
 
   public updateHandState(state: HandState): void {
@@ -124,7 +133,6 @@ export class PuppetRenderer {
     puppet.leftEye.scale.y = state.isWinking ? 0.1 : 1.0;
 
     // 4. Update Articulated Limbs (Arms & Legs) in real time
-    // Colors based on preset
     const limbColor = this.getPrimaryColorForPreset(puppet.preset);
     const strokeColor = this.getSecondaryColorForPreset(puppet.preset);
 
@@ -174,33 +182,34 @@ export class PuppetRenderer {
     puppet.container.position.set(-500, -500);
   }
 
-  public setCustomPuppetTextures(
-    handType: 'Left' | 'Right',
-    closedTexture: Texture,
-    openTexture: Texture
-  ): void {
-    const isLeft = handType === 'Left';
-    const puppet = isLeft ? this.leftPuppet : this.rightPuppet;
-    puppet.preset = 'custom';
+  public async setCustomPuppetUrl(handType: 'Left' | 'Right', url: string): Promise<void> {
+    try {
+      const texture = await Assets.load(url);
+      const isLeft = handType === 'Left';
+      const puppet = isLeft ? this.leftPuppet : this.rightPuppet;
+      puppet.preset = 'custom';
 
-    puppet.container.removeChildren();
+      puppet.container.removeChildren();
 
-    const closedSprite = new Sprite(closedTexture);
-    closedSprite.anchor.set(0.5, 0.5);
-    closedSprite.width = 180;
-    closedSprite.height = 180;
+      const closedSprite = new Sprite(texture);
+      closedSprite.anchor.set(0.5, 0.5);
+      closedSprite.width = 180;
+      closedSprite.height = 180;
 
-    const openSprite = new Sprite(openTexture);
-    openSprite.anchor.set(0.5, 0.5);
-    openSprite.width = 180;
-    openSprite.height = 180;
-    openSprite.visible = false;
+      const openSprite = new Sprite(texture);
+      openSprite.anchor.set(0.5, 0.5);
+      openSprite.width = 180;
+      openSprite.height = 180;
+      openSprite.visible = false;
 
-    puppet.container.addChild(closedSprite);
-    puppet.container.addChild(openSprite);
+      puppet.container.addChild(closedSprite);
+      puppet.container.addChild(openSprite);
 
-    puppet.customSpriteClosed = closedSprite;
-    puppet.customSpriteOpen = openSprite;
+      puppet.customSpriteClosed = closedSprite;
+      puppet.customSpriteOpen = openSprite;
+    } catch (err) {
+      console.error('Failed to load custom puppet image:', err);
+    }
   }
 
   public buildPuppetPreset(handType: 'Left' | 'Right', preset: PuppetPreset): void {
@@ -305,97 +314,75 @@ export class PuppetRenderer {
 
   // 1. Dragon Preset
   private drawDragonPreset(p: DynamicPuppet): void {
-    // Torso
     p.torso.roundRect(-30, -20, 60, 70, 20).fill(0x48bb78).stroke({ width: 4, color: 0x2f855a });
-    p.torso.roundRect(-20, -10, 40, 50, 15).fill(0xf6e05e); // Belly plate
+    p.torso.roundRect(-20, -10, 40, 50, 15).fill(0xf6e05e);
 
-    // Head
     p.headGraphic.circle(0, 0, 45).fill(0x48bb78).stroke({ width: 4, color: 0x2f855a });
-    // Horns
     p.headGraphic.poly([-20, -30, -35, -60, -10, -40]).fill(0xf6e05e).stroke({ width: 3, color: 0x2f855a });
     p.headGraphic.poly([20, -30, 35, -60, 10, -40]).fill(0xf6e05e).stroke({ width: 3, color: 0x2f855a });
 
-    // Eyes
     p.leftEye.circle(-16, -10, 9).fill(0xffffff).circle(-14, -10, 4).fill(0x1a202c);
     p.rightEye.circle(16, -10, 9).fill(0xffffff).circle(14, -10, 4).fill(0x1a202c);
 
-    // Jaw
     p.jaw.arc(0, 10, 18, 0, Math.PI, false).fill(0xe53e3e).stroke({ width: 3, color: 0x1a202c });
   }
 
   // 2. Bunny Preset
   private drawBunnyPreset(p: DynamicPuppet): void {
-    // Torso
     p.torso.roundRect(-28, -20, 56, 65, 20).fill(0xb794f4).stroke({ width: 4, color: 0x6b46c1 });
-    p.torso.circle(0, 10, 18).fill(0xffffff); // White belly
+    p.torso.circle(0, 10, 18).fill(0xffffff);
 
-    // Head
     p.headGraphic.circle(0, 0, 42).fill(0xb794f4).stroke({ width: 4, color: 0x6b46c1 });
-    // Long Ears
     p.headGraphic.ellipse(-18, -55, 10, 30).fill(0xb794f4).stroke({ width: 3, color: 0x6b46c1 });
     p.headGraphic.ellipse(18, -55, 10, 30).fill(0xb794f4).stroke({ width: 3, color: 0x6b46c1 });
 
-    // Eyes
     p.leftEye.circle(-15, -8, 8).fill(0xffffff).circle(-13, -8, 3).fill(0x1a202c);
     p.rightEye.circle(15, -8, 8).fill(0xffffff).circle(13, -8, 3).fill(0x1a202c);
 
-    // Jaw
     p.jaw.arc(0, 10, 15, 0, Math.PI, false).fill(0xf687b3).stroke({ width: 2, color: 0x1a202c });
   }
 
   // 3. Fox Preset
   private drawFoxPreset(p: DynamicPuppet): void {
-    // Torso
     p.torso.roundRect(-30, -20, 60, 65, 18).fill(0xed8936).stroke({ width: 4, color: 0xc05621 });
-    p.torso.ellipse(0, 12, 16, 22).fill(0xffffff); // White chest
+    p.torso.ellipse(0, 12, 16, 22).fill(0xffffff);
 
-    // Head
     p.headGraphic.poly([0, 40, -45, -10, 45, -10]).fill(0xed8936).stroke({ width: 4, color: 0xc05621 });
-    p.headGraphic.poly([-30, -10, -20, -50, -5, -25]).fill(0xed8936).stroke({ width: 3, color: 0xc05621 }); // Ears
+    p.headGraphic.poly([-30, -10, -20, -50, -5, -25]).fill(0xed8936).stroke({ width: 3, color: 0xc05621 });
     p.headGraphic.poly([30, -10, 20, -50, 5, -25]).fill(0xed8936).stroke({ width: 3, color: 0xc05621 });
 
-    // Eyes
     p.leftEye.circle(-18, -5, 7).fill(0x1a202c);
     p.rightEye.circle(18, -5, 7).fill(0x1a202c);
 
-    // Jaw
     p.jaw.arc(0, 16, 14, 0, Math.PI, false).fill(0xe53e3e);
   }
 
   // 4. Robot Preset
   private drawRobotPreset(p: DynamicPuppet): void {
-    // Torso Box
     p.torso.roundRect(-35, -20, 70, 70, 10).fill(0xc0c9d6).stroke({ width: 4, color: 0x4a5568 });
-    p.torso.rect(-18, -5, 36, 25).fill(0x3182ce).stroke({ width: 2, color: 0x2d3748 }); // Screen
+    p.torso.rect(-18, -5, 36, 25).fill(0x3182ce).stroke({ width: 2, color: 0x2d3748 });
 
-    // Head Box
     p.headGraphic.roundRect(-38, -35, 76, 55, 8).fill(0xc0c9d6).stroke({ width: 4, color: 0x4a5568 });
-    p.headGraphic.rect(-4, -50, 8, 15).fill(0xa0aec0); // Antenna
+    p.headGraphic.rect(-4, -50, 8, 15).fill(0xa0aec0);
     p.headGraphic.circle(0, -53, 6).fill(0x3182ce);
 
-    // Eyes
     p.leftEye.rect(-25, -20, 18, 14).fill(0x3182ce);
     p.rightEye.rect(7, -20, 18, 14).fill(0x3182ce);
 
-    // Jaw
     p.jaw.rect(-20, 5, 40, 12).fill(0x4a5568);
   }
 
   // 5. Cat Preset
   private drawCatPreset(p: DynamicPuppet): void {
-    // Torso
     p.torso.roundRect(-28, -20, 56, 65, 20).fill(0xf6e05e).stroke({ width: 4, color: 0xd69e2e });
 
-    // Head
     p.headGraphic.circle(0, 0, 42).fill(0xf6e05e).stroke({ width: 4, color: 0xd69e2e });
-    p.headGraphic.poly([-30, -15, -20, -50, -5, -25]).fill(0xf6e05e).stroke({ width: 3, color: 0xd69e2e }); // Ears
+    p.headGraphic.poly([-30, -15, -20, -50, -5, -25]).fill(0xf6e05e).stroke({ width: 3, color: 0xd69e2e });
     p.headGraphic.poly([30, -15, 20, -50, 5, -25]).fill(0xf6e05e).stroke({ width: 3, color: 0xd69e2e });
 
-    // Eyes
     p.leftEye.ellipse(-15, -8, 8, 10).fill(0x48bb78).circle(-15, -8, 3).fill(0x1a202c);
     p.rightEye.ellipse(15, -8, 8, 10).fill(0x48bb78).circle(15, -8, 3).fill(0x1a202c);
 
-    // Jaw
     p.jaw.arc(0, 10, 15, 0, Math.PI, false).fill(0xe53e3e).stroke({ width: 2, color: 0x1a202c });
   }
 }

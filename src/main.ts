@@ -2,7 +2,6 @@ import { HandTracker } from './tracker';
 import { processHandLandmarks, HandState, Point2D } from './gestures';
 import { PuppetRenderer, PuppetPreset } from './renderer';
 import { ThereminSynth } from './theremin';
-import { Texture } from 'pixi.js';
 import { Results, HAND_CONNECTIONS } from '@mediapipe/hands';
 import { drawConnectors, drawLandmarks } from '@mediapipe/drawing_utils';
 
@@ -19,8 +18,12 @@ class AppManager {
   private showDebugOverlay: boolean = false;
   private isMotionFrozen: boolean = false;
 
-  // Smoothing position persistence across frames
+  // Persistence buffers to eliminate flickering when hand detection drops briefly
   private prevPositions: Map<string, Point2D> = new Map();
+  private missingFrames: Map<'Left' | 'Right', number> = new Map([
+    ['Left', 999],
+    ['Right', 999],
+  ]);
 
   constructor() {
     this.videoElement = document.getElementById('webcam-video') as HTMLVideoElement;
@@ -65,21 +68,21 @@ class AppManager {
     btnCamera.addEventListener('click', async () => {
       if (this.tracker.getActiveState()) {
         this.tracker.stop();
-        btnCamera.textContent = '📷 Spustit Kameru';
+        btnCamera.textContent = '📷 Kamera';
         btnCamera.classList.remove('btn-secondary');
         btnCamera.classList.add('btn-primary');
-        this.showStatus('Kamera byla zastavena.');
+        this.showStatus('Kamera bola zastavena.');
       } else {
-        btnCamera.textContent = '⏸️ Zastavit Kameru';
+        btnCamera.textContent = '⏸️ Zastavit';
         btnCamera.classList.remove('btn-primary');
         btnCamera.classList.add('btn-secondary');
-        this.showStatus('Spouštění kamery a MediaPipe Hands...');
+        this.showStatus('Spouštění kamery...');
 
         await this.tracker.start(
           (results) => this.handleTrackingResults(results),
           (err) => {
             this.showStatus(`Chyba kamery: ${err.message}`);
-            btnCamera.textContent = '📷 Spustit Kameru';
+            btnCamera.textContent = '📷 Kamera';
             btnCamera.classList.remove('btn-secondary');
             btnCamera.classList.add('btn-primary');
           }
@@ -106,12 +109,12 @@ class AppManager {
     btnToggleFreeze.addEventListener('click', () => {
       this.isMotionFrozen = !this.isMotionFrozen;
       if (this.isMotionFrozen) {
-        btnToggleFreeze.textContent = '🔒 Pohyb Zamknut';
+        btnToggleFreeze.textContent = '🔒 Zamknuto';
         btnToggleFreeze.classList.remove('btn-secondary');
         btnToggleFreeze.classList.add('btn-primary');
         this.showStatus('Pohyb loutek byl uzamčen.');
       } else {
-        btnToggleFreeze.textContent = '🔓 Pohyb Aktivní';
+        btnToggleFreeze.textContent = '🔓 Pohyb';
         btnToggleFreeze.classList.remove('btn-primary');
         btnToggleFreeze.classList.add('btn-secondary');
         this.showStatus('Pohyb loutek aktivní.');
@@ -123,12 +126,12 @@ class AppManager {
     btnToggleTheremin.addEventListener('click', () => {
       const active = this.theremin.toggle();
       if (active) {
-        btnToggleTheremin.textContent = '🎵 Theremin Zvuk (ZAP)';
+        btnToggleTheremin.textContent = '🎵 Theremin (ZAP)';
         btnToggleTheremin.classList.remove('btn-secondary');
         btnToggleTheremin.classList.add('btn-primary');
-        this.showStatus('Theremin zvuky aktivní! Levá ruka = výška tónu, pravá ruka = hlasitost.');
+        this.showStatus('Theremin zvuky aktivní!');
       } else {
-        btnToggleTheremin.textContent = '🎵 Theremin Vypnut';
+        btnToggleTheremin.textContent = '🎵 Theremin';
         btnToggleTheremin.classList.remove('btn-primary');
         btnToggleTheremin.classList.add('btn-secondary');
         this.showStatus('Theremin vypnut.');
@@ -153,45 +156,34 @@ class AppManager {
       this.renderer.setBackgroundColor(hexValue);
     });
 
-    // Custom Background Upload (Reliable Image element decode)
-    uploadBg.addEventListener('change', (e) => {
+    // Custom Background Upload
+    uploadBg.addEventListener('change', async (e) => {
       const file = (e.target as HTMLInputElement).files?.[0];
       if (file) {
-        const img = new Image();
-        img.onload = () => {
-          const texture = Texture.from(img);
-          this.renderer.setCustomBackgroundTexture(texture);
-          this.showStatus('Vlastní obrázek pozadí byl úspěšně načten.');
-          setTimeout(() => this.hideStatus(), 3000);
-        };
-        img.onerror = () => {
-          this.showStatus('Chyba při načítání obrázku pozadí.');
-        };
-        img.src = URL.createObjectURL(file);
+        const url = URL.createObjectURL(file);
+        await this.renderer.setCustomBackgroundUrl(url);
+        this.showStatus('Vlastní obrázek pozadí načten.');
+        setTimeout(() => this.hideStatus(), 3000);
       }
     });
 
     // Custom Puppet Uploads
-    uploadLeft.addEventListener('change', (e) => {
-      this.handleCustomPuppetUpload('Left', e.target as HTMLInputElement);
+    uploadLeft.addEventListener('change', async (e) => {
+      await this.handleCustomPuppetUpload('Left', e.target as HTMLInputElement);
     });
 
-    uploadRight.addEventListener('change', (e) => {
-      this.handleCustomPuppetUpload('Right', e.target as HTMLInputElement);
+    uploadRight.addEventListener('change', async (e) => {
+      await this.handleCustomPuppetUpload('Right', e.target as HTMLInputElement);
     });
   }
 
-  private handleCustomPuppetUpload(handType: 'Left' | 'Right', input: HTMLInputElement): void {
+  private async handleCustomPuppetUpload(handType: 'Left' | 'Right', input: HTMLInputElement): Promise<void> {
     const file = input.files?.[0];
     if (file) {
-      const img = new Image();
-      img.onload = () => {
-        const texture = Texture.from(img);
-        this.renderer.setCustomPuppetTextures(handType, texture, texture);
-        this.showStatus(`Vlastní obrázek pro ${handType === 'Left' ? 'Levou' : 'Pravou'} loutku načten.`);
-        setTimeout(() => this.hideStatus(), 3000);
-      };
-      img.src = URL.createObjectURL(file);
+      const url = URL.createObjectURL(file);
+      await this.renderer.setCustomPuppetUrl(handType, url);
+      this.showStatus(`Vlastní PNG obrázek pro ${handType === 'Left' ? 'Levou' : 'Pravou'} loutku načten.`);
+      setTimeout(() => this.hideStatus(), 3000);
     }
   }
 
@@ -203,7 +195,6 @@ class AppManager {
       this.debugCtx.save();
       this.debugCtx.clearRect(0, 0, width, height);
 
-      // Draw mirrored video frame on debug overlay
       if (results.image) {
         this.debugCtx.scale(-1, 1);
         this.debugCtx.drawImage(results.image, -width, 0, width, height);
@@ -221,6 +212,7 @@ class AppManager {
         const handedness = results.multiHandedness[i];
         const handType = handedness.label as 'Left' | 'Right';
         detectedHands.add(handType);
+        this.missingFrames.set(handType, 0); // Reset missing frames counter
 
         const prevPos = this.prevPositions.get(handType);
 
@@ -241,7 +233,7 @@ class AppManager {
           rightY = state.wristPosition.y;
         }
 
-        // Store updated position for next frame smoothing
+        // Store updated position
         this.prevPositions.set(handType, state.smoothedPosition);
 
         // Update Pixi.js puppet if motion is not frozen
@@ -275,16 +267,19 @@ class AppManager {
       this.theremin.updateHands(leftY, rightY);
     }
 
-    // Hide puppets if not detected and not frozen
+    // Handle missing hand frames with 15-frame persistence buffer to eliminate flickering
     if (!this.isMotionFrozen) {
-      if (!detectedHands.has('Left')) {
-        this.renderer.hideHand('Left');
-        this.prevPositions.delete('Left');
-      }
-      if (!detectedHands.has('Right')) {
-        this.renderer.hideHand('Right');
-        this.prevPositions.delete('Right');
-      }
+      (['Left', 'Right'] as const).forEach((hand) => {
+        if (!detectedHands.has(hand)) {
+          const count = (this.missingFrames.get(hand) || 0) + 1;
+          this.missingFrames.set(hand, count);
+
+          if (count > 15) { // Hide only after 15 consecutive missing frames (~0.5 sec)
+            this.renderer.hideHand(hand);
+            this.prevPositions.delete(hand);
+          }
+        }
+      });
     }
 
     if (this.showDebugOverlay) {
