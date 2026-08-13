@@ -11,8 +11,8 @@
   * **Deployment:** GitHub Pages (via `gh-pages` branch)
 * **Modular Architecture:**
   * `tracker.ts`: WebCam & MediaPipe Hands CV integration.
-  * `gestures.ts`: Euclidean math, LERP smoothing, mirrored X coordinates, index finger mouth movement, and 5-finger articulated limb kinematics.
-  * `renderer.ts`: Pixi.js 2D stage rendering, Theremin Mode glowing/pulsing Orbs (Cyan Pitch & Magenta Volume), Pixi v8 `Assets.load()` for custom textures, full-bodied puppets.
+  * `gestures.ts`: Euclidean math, LERP smoothing, mirrored X coordinates, 100% exclusive index finger flexion for mouth opening, and 5-finger articulated limb kinematics.
+  * `renderer.ts`: Pixi.js 2D stage rendering, Theremin Mode glowing/pulsing Orbs (Cyan Pitch & Magenta Volume) with complete puppet hiding, Pixi v8 `Assets.load()` for custom textures, full-bodied puppets.
   * `theremin.ts`: Web Audio API digital Theremin synthesizer (High-volume boost, single/dual-hand controls).
   * `main.ts`: UI event handling, 15-frame tracking persistence buffer to prevent flickering, Motion Freeze lock, Theremin toggle, FileReader base64 DataURL image decoding, and application lifecycle.
 
@@ -22,15 +22,15 @@
 * [x] Scaffolded Vite + TypeScript structure with `pixi.js`, `@mediapipe/hands`, `@mediapipe/camera_utils`, `vitest`
 * [x] Implemented `gestures.ts` with unit tests for LERP, rotation, mirrored X coordinates, and 5-finger limb kinematics
 * [x] Implemented `tracker.ts` for camera stream and MediaPipe Hands tracking
-* [x] Replaced eye winking with direct index finger mouth/jaw opening movement
-* [x] Added **Theremin Mode Visual Orbs**: Glowing cyan & magenta pulsating circles with live frequency Hz and volume % labels
+* [x] Updated mouth opening logic to be driven 100% EXCLUSIVELY by index finger bending (with ZERO connection to thumb)
+* [x] Updated Theremin Mode to COMPLETELY HIDE puppets (`visible = false`), leaving only the background and pulsing Orbs
 * [x] Fixed custom background image loading bug via `FileReader.readAsDataURL` + Pixi v8 `Assets.load`
 * [x] Published live build to GitHub Pages
 
 ## 3. Active Task & Next Steps
 * **Active Task:** Verification of updated application.
 * **Next Steps:**
-  1. Solicit final user feedback on Theremin Orbs and index finger mouth movement.
+  1. Solicit final user feedback on 100% index-finger mouth movement and Theremin puppet hiding.
 
 ## 4. Known Issues / Technical Debt / Blockers
 * None currently.
