@@ -1,6 +1,7 @@
 import { HandTracker } from './tracker';
 import { processHandLandmarks, HandState, Point2D } from './gestures';
 import { PuppetRenderer, PuppetPreset } from './renderer';
+import { ThereminSynth } from './theremin';
 import { Texture } from 'pixi.js';
 import { Results, HAND_CONNECTIONS } from '@mediapipe/hands';
 import { drawConnectors, drawLandmarks } from '@mediapipe/drawing_utils';
@@ -8,6 +9,7 @@ import { drawConnectors, drawLandmarks } from '@mediapipe/drawing_utils';
 class AppManager {
   private tracker: HandTracker;
   private renderer: PuppetRenderer;
+  private theremin: ThereminSynth;
 
   private videoElement: HTMLVideoElement;
   private debugCanvas: HTMLCanvasElement;
@@ -15,6 +17,7 @@ class AppManager {
   private statusBanner: HTMLElement;
 
   private showDebugOverlay: boolean = false;
+  private isMotionFrozen: boolean = false;
 
   // Smoothing position persistence across frames
   private prevPositions: Map<string, Point2D> = new Map();
@@ -31,6 +34,7 @@ class AppManager {
 
     this.tracker = new HandTracker(this.videoElement);
     this.renderer = new PuppetRenderer(width, height);
+    this.theremin = new ThereminSynth();
 
     this.init(stageContainer);
   }
@@ -47,6 +51,9 @@ class AppManager {
   private setupUIControls(): void {
     const btnCamera = document.getElementById('btn-camera') as HTMLButtonElement;
     const btnToggleDebug = document.getElementById('btn-toggle-debug') as HTMLButtonElement;
+    const btnToggleFreeze = document.getElementById('btn-toggle-freeze') as HTMLButtonElement;
+    const btnToggleTheremin = document.getElementById('btn-toggle-theremin') as HTMLButtonElement;
+
     const selectLeftPuppet = document.getElementById('select-left-puppet') as HTMLSelectElement;
     const selectRightPuppet = document.getElementById('select-right-puppet') as HTMLSelectElement;
     const selectBgColor = document.getElementById('bg-color') as HTMLSelectElement;
@@ -95,6 +102,40 @@ class AppManager {
       }
     });
 
+    // Toggle Motion Freeze / Lock
+    btnToggleFreeze.addEventListener('click', () => {
+      this.isMotionFrozen = !this.isMotionFrozen;
+      if (this.isMotionFrozen) {
+        btnToggleFreeze.textContent = '🔒 Pohyb Zamknut';
+        btnToggleFreeze.classList.remove('btn-secondary');
+        btnToggleFreeze.classList.add('btn-primary');
+        this.showStatus('Pohyb loutek byl uzamčen.');
+      } else {
+        btnToggleFreeze.textContent = '🔓 Pohyb Aktivní';
+        btnToggleFreeze.classList.remove('btn-primary');
+        btnToggleFreeze.classList.add('btn-secondary');
+        this.showStatus('Pohyb loutek aktivní.');
+      }
+      setTimeout(() => this.hideStatus(), 2000);
+    });
+
+    // Toggle Theremin Audio Synthesizer
+    btnToggleTheremin.addEventListener('click', () => {
+      const active = this.theremin.toggle();
+      if (active) {
+        btnToggleTheremin.textContent = '🎵 Theremin Zvuk (ZAP)';
+        btnToggleTheremin.classList.remove('btn-secondary');
+        btnToggleTheremin.classList.add('btn-primary');
+        this.showStatus('Theremin zvuky aktivní! Levá ruka = výška tónu, pravá ruka = hlasitost.');
+      } else {
+        btnToggleTheremin.textContent = '🎵 Theremin Vypnut';
+        btnToggleTheremin.classList.remove('btn-primary');
+        btnToggleTheremin.classList.add('btn-secondary');
+        this.showStatus('Theremin vypnut.');
+      }
+      setTimeout(() => this.hideStatus(), 3000);
+    });
+
     // Preset Selection
     selectLeftPuppet.addEventListener('change', (e) => {
       const preset = (e.target as HTMLSelectElement).value as PuppetPreset;
@@ -112,13 +153,21 @@ class AppManager {
       this.renderer.setBackgroundColor(hexValue);
     });
 
-    // Custom Background Upload
+    // Custom Background Upload (Reliable Image element decode)
     uploadBg.addEventListener('change', (e) => {
       const file = (e.target as HTMLInputElement).files?.[0];
       if (file) {
-        const url = URL.createObjectURL(file);
-        const texture = Texture.from(url);
-        this.renderer.setCustomBackgroundTexture(texture);
+        const img = new Image();
+        img.onload = () => {
+          const texture = Texture.from(img);
+          this.renderer.setCustomBackgroundTexture(texture);
+          this.showStatus('Vlastní obrázek pozadí byl úspěšně načten.');
+          setTimeout(() => this.hideStatus(), 3000);
+        };
+        img.onerror = () => {
+          this.showStatus('Chyba při načítání obrázku pozadí.');
+        };
+        img.src = URL.createObjectURL(file);
       }
     });
 
@@ -135,11 +184,14 @@ class AppManager {
   private handleCustomPuppetUpload(handType: 'Left' | 'Right', input: HTMLInputElement): void {
     const file = input.files?.[0];
     if (file) {
-      const url = URL.createObjectURL(file);
-      const texture = Texture.from(url);
-      this.renderer.setCustomPuppetTextures(handType, texture, texture);
-      this.showStatus(`Vlastní obrázek pro ${handType === 'Left' ? 'Levou' : 'Pravou'} loutku načten.`);
-      setTimeout(() => this.hideStatus(), 3000);
+      const img = new Image();
+      img.onload = () => {
+        const texture = Texture.from(img);
+        this.renderer.setCustomPuppetTextures(handType, texture, texture);
+        this.showStatus(`Vlastní obrázek pro ${handType === 'Left' ? 'Levou' : 'Pravou'} loutku načten.`);
+        setTimeout(() => this.hideStatus(), 3000);
+      };
+      img.src = URL.createObjectURL(file);
     }
   }
 
@@ -160,6 +212,8 @@ class AppManager {
     }
 
     const detectedHands = new Set<'Left' | 'Right'>();
+    let leftY: number | undefined;
+    let rightY: number | undefined;
 
     if (results.multiHandLandmarks && results.multiHandedness) {
       for (let i = 0; i < results.multiHandLandmarks.length; i++) {
@@ -180,11 +234,20 @@ class AppManager {
           0.35 // LERP alpha
         );
 
+        // Track Y position for Theremin synth
+        if (handType === 'Left') {
+          leftY = state.wristPosition.y;
+        } else {
+          rightY = state.wristPosition.y;
+        }
+
         // Store updated position for next frame smoothing
         this.prevPositions.set(handType, state.smoothedPosition);
 
-        // Update Pixi.js puppet
-        this.renderer.updateHandState(state);
+        // Update Pixi.js puppet if motion is not frozen
+        if (!this.isMotionFrozen) {
+          this.renderer.updateHandState(state);
+        }
 
         // Draw debug landmarks overlay (mirrored X)
         if (this.showDebugOverlay) {
@@ -207,14 +270,21 @@ class AppManager {
       }
     }
 
-    // Hide puppets for hands that were not detected
-    if (!detectedHands.has('Left')) {
-      this.renderer.hideHand('Left');
-      this.prevPositions.delete('Left');
+    // Update Theremin sound synthesizer
+    if (this.theremin.isEnabled()) {
+      this.theremin.updateHands(leftY, rightY);
     }
-    if (!detectedHands.has('Right')) {
-      this.renderer.hideHand('Right');
-      this.prevPositions.delete('Right');
+
+    // Hide puppets if not detected and not frozen
+    if (!this.isMotionFrozen) {
+      if (!detectedHands.has('Left')) {
+        this.renderer.hideHand('Left');
+        this.prevPositions.delete('Left');
+      }
+      if (!detectedHands.has('Right')) {
+        this.renderer.hideHand('Right');
+        this.prevPositions.delete('Right');
+      }
     }
 
     if (this.showDebugOverlay) {
