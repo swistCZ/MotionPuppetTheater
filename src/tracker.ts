@@ -5,6 +5,8 @@ export type TrackingErrorCallback = (error: Error) => void;
 
 export class HandTracker {
   private videoElement: HTMLVideoElement;
+  private frameCanvas: HTMLCanvasElement;
+  private frameCtx: CanvasRenderingContext2D;
   private hands: Hands | null = null;
   private mediaStream: MediaStream | null = null;
   private animFrameId: number | null = null;
@@ -15,14 +17,22 @@ export class HandTracker {
 
   constructor(videoElement: HTMLVideoElement) {
     this.videoElement = videoElement;
+    this.frameCanvas = document.createElement('canvas');
+    this.frameCanvas.width = 640;
+    this.frameCanvas.height = 480;
+    this.frameCtx = this.frameCanvas.getContext('2d', { willReadFrequently: true })!;
   }
 
   /**
-   * Initializes MediaPipe Hands with same-origin local assets for DuckDuckGo/Brave protection,
+   * Initializes MediaPipe Hands with absolute same-origin path for DuckDuckGo/Brave protection,
    * with fallbacks to jsdelivr & unpkg CDNs.
    */
   public async initialize(): Promise<void> {
+    // Resolve absolute local path to public/mediapipe/
+    const localAbsoluteUrl = new URL('mediapipe/', window.location.href).href;
+
     const sources = [
+      localAbsoluteUrl,
       './mediapipe/',
       'https://cdn.jsdelivr.net/npm/@mediapipe/hands/',
       'https://unpkg.com/@mediapipe/hands/',
@@ -52,7 +62,6 @@ export class HandTracker {
           }
         });
 
-        // Test initialization
         return;
       } catch (err) {
         lastErr = err instanceof Error ? err : new Error(String(err));
@@ -95,6 +104,7 @@ export class HandTracker {
 
       this.videoElement.srcObject = this.mediaStream;
       this.videoElement.setAttribute('playsinline', 'true');
+      this.videoElement.setAttribute('webkit-playsinline', 'true');
       this.videoElement.setAttribute('muted', 'true');
       this.videoElement.muted = true;
 
@@ -117,17 +127,28 @@ export class HandTracker {
     const process = async () => {
       if (!this.isRunning) return;
 
+      const video = this.videoElement;
       if (
         this.hands &&
-        this.videoElement.readyState >= 2 && // HAVE_CURRENT_DATA
-        !this.videoElement.paused &&
+        video.readyState >= 2 && // HAVE_CURRENT_DATA
+        video.videoWidth > 0 &&
+        video.videoHeight > 0 &&
+        !video.paused &&
         !this.isProcessingFrame
       ) {
         this.isProcessingFrame = true;
         try {
-          await this.hands.send({ image: this.videoElement });
-        } catch {
+          // Draw frame onto intermediate offscreen canvas to bypass DuckDuckGo/Safari video element restrictions
+          if (this.frameCanvas.width !== video.videoWidth || this.frameCanvas.height !== video.videoHeight) {
+            this.frameCanvas.width = video.videoWidth;
+            this.frameCanvas.height = video.videoHeight;
+          }
+          this.frameCtx.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
+
+          await this.hands.send({ image: this.frameCanvas });
+        } catch (err) {
           this.isProcessingFrame = false;
+          console.warn('Frame send warning:', err);
         }
       }
 
