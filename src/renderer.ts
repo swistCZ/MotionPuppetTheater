@@ -123,9 +123,9 @@ export class PuppetRenderer {
     this.isThereminMode = enabled;
     this.thereminContainer.visible = enabled;
 
-    // Dim/hide puppets when Theremin mode is ON
-    this.leftPuppet.container.alpha = enabled ? 0.2 : 1.0;
-    this.rightPuppet.container.alpha = enabled ? 0.2 : 1.0;
+    // Completely hide puppets when Theremin mode is ON
+    this.leftPuppet.container.visible = !enabled;
+    this.rightPuppet.container.visible = !enabled;
   }
 
   public updateThereminVisuals(

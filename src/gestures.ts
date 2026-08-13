@@ -24,7 +24,7 @@ export interface HandState {
   smoothedPosition: Point2D; // LERP smoothed position
   pinchDistance: number; // Normalized distance between thumb and index tips
   isPinching: boolean; // True if mouth closed
-  mouthOpenRatio: number; // Continuous 0.0 (closed) to 1.0 (fully open), driven by index finger bending
+  mouthOpenRatio: number; // Driven 100% exclusively by index finger flexion
   fingerSplay: number; // Continuous 0.0 (fist/together) to 1.0 (spread fingers)
   rotation: number; // Angle in radians
   limbs: LimbOffsets; // Dynamic 5-finger articulated limb positions
@@ -82,8 +82,9 @@ export function processHandLandmarks(
   const wrist = mirroredLandmarks[0] || { x: 0.5, y: 0.5, z: 0 };
   const palmCenter = mirroredLandmarks[9] || { x: 0.5, y: 0.3, z: 0 };
   const thumbTip = mirroredLandmarks[4] || { x: 0.35, y: 0.35, z: 0 };
-  const indexTip = mirroredLandmarks[8] || { x: 0.45, y: 0.2, z: 0 };
+  const indexMcp = mirroredLandmarks[5] || { x: 0.45, y: 0.32, z: 0 };
   const indexPip = mirroredLandmarks[6] || { x: 0.45, y: 0.28, z: 0 };
+  const indexTip = mirroredLandmarks[8] || { x: 0.45, y: 0.2, z: 0 };
   const middleTip = mirroredLandmarks[12] || { x: 0.5, y: 0.18, z: 0 };
   const ringTip = mirroredLandmarks[16] || { x: 0.55, y: 0.2, z: 0 };
   const pinkyTip = mirroredLandmarks[20] || { x: 0.6, y: 0.25, z: 0 };
@@ -132,22 +133,19 @@ export function processHandLandmarks(
     },
   };
 
-  // Calculate pinch distance between thumb and index tip
+  // 100% EXCLUSIVE Index Finger Flexion for Mouth Opening
+  // Extended index finger (far from MCP) -> mouth closed (0.0)
+  // Bent/flexed index finger (close to MCP) -> mouth open (1.0)
+  const indexLengthCurrent = calculateDistance2D({ x: indexTip.x, y: indexTip.y }, { x: indexMcp.x, y: indexMcp.y });
+  const indexLengthMax = calculateDistance2D({ x: indexPip.x, y: indexPip.y }, { x: indexMcp.x, y: indexMcp.y }) * 2.2;
+  const mouthOpenRatio = clamp((indexLengthMax - indexLengthCurrent) / (indexLengthMax * 0.5), 0.0, 1.0);
+
+  // Pinch distance kept only for reference if needed
   const pinchDistance = calculateDistance2D(
     { x: thumbTip.x, y: thumbTip.y },
     { x: indexTip.x, y: indexTip.y }
   );
-
   const isPinching = pinchDistance < pinchThreshold;
-
-  // Index finger bend ratio (distance from index tip to wrist relative to PIP joint)
-  const indexDistWrist = calculateDistance2D({ x: indexTip.x, y: indexTip.y }, { x: wrist.x, y: wrist.y });
-  const indexPipDistWrist = calculateDistance2D({ x: indexPip.x, y: indexPip.y }, { x: wrist.x, y: wrist.y });
-  const indexBend = clamp((indexPipDistWrist - indexDistWrist + 0.05) / 0.1, 0.0, 1.0);
-
-  // Combined mouth opening ratio driven by index finger bending + pinch distance
-  const pinchMouthRatio = clamp((pinchDistance - 0.03) / 0.15, 0.0, 1.0);
-  const mouthOpenRatio = clamp(pinchMouthRatio * 0.5 + indexBend * 0.5, 0.0, 1.0);
 
   // Finger splay metric
   const indexPinkyDist = calculateDistance2D(
