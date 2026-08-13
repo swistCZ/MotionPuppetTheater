@@ -18,20 +18,22 @@ export class HandTracker {
   }
 
   /**
-   * Initializes MediaPipe Hands instance with primary (jsdelivr) and secondary (unpkg) CDN fallbacks.
+   * Initializes MediaPipe Hands with same-origin local assets for DuckDuckGo/Brave protection,
+   * with fallbacks to jsdelivr & unpkg CDNs.
    */
   public async initialize(): Promise<void> {
-    const cdnSources = [
+    const sources = [
+      './mediapipe/',
       'https://cdn.jsdelivr.net/npm/@mediapipe/hands/',
       'https://unpkg.com/@mediapipe/hands/',
     ];
 
-    let lastCdnErr: Error | null = null;
+    let lastErr: Error | null = null;
 
-    for (const cdnUrl of cdnSources) {
+    for (const sourceUrl of sources) {
       try {
         this.hands = new Hands({
-          locateFile: (file: string) => `${cdnUrl}${file}`,
+          locateFile: (file: string) => `${sourceUrl}${file}`,
         });
 
         const options: Options = {
@@ -53,17 +55,17 @@ export class HandTracker {
         // Test initialization
         return;
       } catch (err) {
-        lastCdnErr = err instanceof Error ? err : new Error(String(err));
+        lastErr = err instanceof Error ? err : new Error(String(err));
       }
     }
 
-    if (lastCdnErr) {
-      throw new Error(`Nepodařilo se načíst MediaPipe knižnici z CDN: ${lastCdnErr.message}`);
+    if (lastErr) {
+      throw new Error(`Nepodařilo se načíst AI modely pro sledování rukou: ${lastErr.message}`);
     }
   }
 
   /**
-   * Starts universal cross-browser video stream (Safari, Chrome, Firefox, Edge, Mobile) and camera processing loop.
+   * Starts universal cross-browser video stream (DuckDuckGo, Safari, Chrome, Firefox, Edge, Mobile) and camera processing loop.
    */
   public async start(onResults: TrackingResultsCallback, onError?: TrackingErrorCallback): Promise<void> {
     this.onResultsCallback = onResults;
@@ -167,7 +169,7 @@ export class HandTracker {
     const message = err instanceof Error ? err.message : String(err);
 
     if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
-      return new Error('Přístup ke kameře byl zamítnut. Povolte prosím kameru v nastavení prohlížeče.');
+      return new Error('Přístup ke kameře byl zamítnut. Povolte prosím kameru v nastavení prohlížeče DuckDuckGo / systému.');
     }
     if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
       return new Error('Kamera nebyla v systému nalezena. Připojte prosím webkameru.');
