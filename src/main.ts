@@ -1,5 +1,11 @@
 import { HandTracker } from './tracker';
-import { processHandLandmarks, HandState, Point2D } from './gestures';
+import {
+  processHandLandmarks,
+  matchDetectedHandsToPuppets,
+  DetectedHandInput,
+  HandState,
+  Point2D
+} from './gestures';
 import { PuppetRenderer, PuppetPreset } from './renderer';
 import { ThereminSynth } from './theremin';
 import { Results, HAND_CONNECTIONS } from '@mediapipe/hands';
@@ -14,9 +20,15 @@ class AppManager {
   private debugCanvas: HTMLCanvasElement;
   private debugCtx: CanvasRenderingContext2D;
   private statusBanner: HTMLElement;
+  private fpsBadge: HTMLElement;
 
   private showDebugOverlay: boolean = false;
   private isMotionFrozen: boolean = false;
+
+  // FPS calculation
+  private lastFrameTime: number = performance.now();
+  private frameCount: number = 0;
+  private currentFps: number = 60;
 
   // Persistence buffers to eliminate flickering when hand detection drops briefly
   private prevPositions: Map<string, Point2D> = new Map();
@@ -30,6 +42,7 @@ class AppManager {
     this.debugCanvas = document.getElementById('debug-canvas') as HTMLCanvasElement;
     this.debugCtx = this.debugCanvas.getContext('2d')!;
     this.statusBanner = document.getElementById('status-banner') as HTMLElement;
+    this.fpsBadge = document.getElementById('fps-badge') as HTMLElement;
 
     const stageContainer = document.getElementById('pixi-viewport') as HTMLElement;
     const width = stageContainer.clientWidth || window.innerWidth;
@@ -202,6 +215,8 @@ class AppManager {
   }
 
   private handleTrackingResults(results: Results): void {
+    this.updateFps();
+
     const width = this.debugCanvas.width;
     const height = this.debugCanvas.height;
 
@@ -221,10 +236,27 @@ class AppManager {
     let rightHandState: HandState | undefined;
 
     if (results.multiHandLandmarks && results.multiHandedness) {
+      // 1. Prepare raw hand inputs
+      const rawInputs: DetectedHandInput[] = [];
       for (let i = 0; i < results.multiHandLandmarks.length; i++) {
         const landmarks = results.multiHandLandmarks[i];
         const handedness = results.multiHandedness[i];
-        const handType = handedness.label as 'Left' | 'Right';
+        rawInputs.push({
+          landmarks,
+          mediaPipeLabel: handedness.label as 'Left' | 'Right',
+        });
+      }
+
+      // 2. Spatial proximity matching to prevent hand swapping/teleportation
+      const prevLeft = this.prevPositions.get('Left');
+      const prevRight = this.prevPositions.get('Right');
+      const matchedHands = matchDetectedHandsToPuppets(rawInputs, prevLeft, prevRight, width, height);
+
+      // 3. Process matched hands
+      for (const matched of matchedHands) {
+        const handType = matched.puppetSlot;
+        const landmarks = matched.landmarks;
+
         detectedHands.add(handType);
         this.missingFrames.set(handType, 0); // Reset missing frames counter
 
@@ -308,6 +340,19 @@ class AppManager {
 
     if (this.showDebugOverlay) {
       this.debugCtx.restore();
+    }
+  }
+
+  private updateFps(): void {
+    this.frameCount++;
+    const now = performance.now();
+    const elapsed = now - this.lastFrameTime;
+
+    if (elapsed >= 1000) {
+      this.currentFps = Math.round((this.frameCount * 1000) / elapsed);
+      this.fpsBadge.textContent = `⚡ ${this.currentFps} FPS`;
+      this.frameCount = 0;
+      this.lastFrameTime = now;
     }
   }
 

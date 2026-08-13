@@ -4,11 +4,11 @@ import {
   clamp,
   calculateDistance2D,
   calculateAngleRadians,
-  processHandLandmarks,
-  Point3D
+  matchDetectedHandsToPuppets,
+  DetectedHandInput
 } from './gestures';
 
-describe('gestures math module', () => {
+describe('gestures math & spatial matching module', () => {
   it('lerp and clamp work correctly', () => {
     expect(lerp(0, 10, 0.5)).toBe(5);
     expect(clamp(-5, 0, 10)).toBe(0);
@@ -20,24 +20,28 @@ describe('gestures math module', () => {
     expect(calculateAngleRadians({ x: 0, y: 0 }, { x: 0, y: -1 })).toBeCloseTo(-Math.PI / 2);
   });
 
-  it('processHandLandmarks produces 5 articulated limb vectors and mirrored coordinates', () => {
-    const landmarks: Point3D[] = Array.from({ length: 21 }, () => ({ x: 0.2, y: 0.5, z: 0 }));
-    landmarks[0] = { x: 0.2, y: 0.5, z: 0 };
-    landmarks[9] = { x: 0.2, y: 0.3, z: 0 };
-    landmarks[4] = { x: 0.1, y: 0.3, z: 0 }; // Thumb
-    landmarks[8] = { x: 0.2, y: 0.1, z: 0 }; // Index (Head)
-    landmarks[12] = { x: 0.3, y: 0.3, z: 0 }; // Middle
-    landmarks[16] = { x: 0.2, y: 0.6, z: 0 }; // Ring
-    landmarks[20] = { x: 0.3, y: 0.6, z: 0 }; // Pinky
+  it('matchDetectedHandsToPuppets prevents hand swapping based on spatial proximity', () => {
+    const rawHands: DetectedHandInput[] = [
+      {
+        mediaPipeLabel: 'Left', // Erroneously swapped label by MediaPipe
+        landmarks: Array.from({ length: 21 }, () => ({ x: 0.2, y: 0.5, z: 0 })), // x=0.2 => Mirrored x=0.8 (800px)
+      },
+      {
+        mediaPipeLabel: 'Right', // Erroneously swapped label by MediaPipe
+        landmarks: Array.from({ length: 21 }, () => ({ x: 0.8, y: 0.5, z: 0 })), // x=0.8 => Mirrored x=0.2 (200px)
+      },
+    ];
 
-    const state = processHandLandmarks(landmarks, 'Left', 1000, 800);
+    // Previous positions: Left puppet at x=200px, Right puppet at x=800px
+    const matched = matchDetectedHandsToPuppets(rawHands, { x: 200, y: 400 }, { x: 800, y: 400 }, 1000, 800);
 
-    expect(state.handType).toBe('Left');
-    expect(state.limbs).toBeDefined();
-    expect(state.limbs.head).toBeDefined();
-    expect(state.limbs.leftArm).toBeDefined();
-    expect(state.limbs.rightArm).toBeDefined();
-    expect(state.limbs.leftLeg).toBeDefined();
-    expect(state.limbs.rightLeg).toBeDefined();
+    expect(matched.length).toBe(2);
+    const leftSlot = matched.find((m) => m.puppetSlot === 'Left');
+    const rightSlot = matched.find((m) => m.puppetSlot === 'Right');
+
+    expect(leftSlot).toBeDefined();
+    expect(rightSlot).toBeDefined();
+    // Left slot should get the hand near x=200px (raw x=0.8)
+    expect(1.0 - leftSlot!.landmarks[9].x).toBeCloseTo(0.2); // Mirrored X = 0.2 (200px)
   });
 });

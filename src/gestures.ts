@@ -30,6 +30,16 @@ export interface HandState {
   limbs: LimbOffsets; // Dynamic 5-finger articulated limb positions
 }
 
+export interface DetectedHandInput {
+  landmarks: Point3D[];
+  mediaPipeLabel: 'Left' | 'Right';
+}
+
+export interface MatchedHandOutput {
+  puppetSlot: 'Left' | 'Right';
+  landmarks: Point3D[];
+}
+
 /**
  * Linear interpolation between start and end.
  */
@@ -58,6 +68,87 @@ export function calculateDistance2D(p1: Point2D, p2: Point2D): number {
  */
 export function calculateAngleRadians(p1: Point2D, p2: Point2D): number {
   return Math.atan2(p2.y - p1.y, p2.x - p1.x);
+}
+
+/**
+ * Matches new MediaPipe hand detections to Puppet slots (Left / Right) based on spatial proximity
+ * to eliminate hand swapping/teleportation when hands get close or cross each other.
+ */
+export function matchDetectedHandsToPuppets(
+  detectedHands: DetectedHandInput[],
+  lastLeftPos?: Point2D,
+  lastRightPos?: Point2D,
+  canvasWidth: number = 1000,
+  canvasHeight: number = 800
+): MatchedHandOutput[] {
+  if (detectedHands.length === 0) return [];
+
+  // Convert raw palm centers to canvas pixel coordinates (mirrored X)
+  const handPixels = detectedHands.map((dh) => {
+    const palm = dh.landmarks[9] || dh.landmarks[0] || { x: 0.5, y: 0.5, z: 0 };
+    return {
+      x: (1.0 - palm.x) * canvasWidth,
+      y: palm.y * canvasHeight,
+      mediaPipeLabel: dh.mediaPipeLabel,
+      landmarks: dh.landmarks,
+    };
+  });
+
+  if (detectedHands.length === 1) {
+    const h = handPixels[0];
+    let assignedSlot: 'Left' | 'Right' = h.mediaPipeLabel;
+
+    // Spatial proximity override if previous positions exist
+    if (lastLeftPos && lastRightPos) {
+      const distToLeft = calculateDistance2D(h, lastLeftPos);
+      const distToRight = calculateDistance2D(h, lastRightPos);
+      assignedSlot = distToLeft <= distToRight ? 'Left' : 'Right';
+    } else if (lastLeftPos) {
+      const distToLeft = calculateDistance2D(h, lastLeftPos);
+      assignedSlot = distToLeft < 350 ? 'Left' : h.mediaPipeLabel;
+    } else if (lastRightPos) {
+      const distToRight = calculateDistance2D(h, lastRightPos);
+      assignedSlot = distToRight < 350 ? 'Right' : h.mediaPipeLabel;
+    }
+
+    return [{ puppetSlot: assignedSlot, landmarks: h.landmarks }];
+  }
+
+  // 2 hands detected: compute distances to Left and Right puppet positions
+  const h0 = handPixels[0];
+  const h1 = handPixels[1];
+
+  if (lastLeftPos && lastRightPos) {
+    // Option A: h0 -> Left, h1 -> Right
+    const costA = calculateDistance2D(h0, lastLeftPos) + calculateDistance2D(h1, lastRightPos);
+    // Option B: h0 -> Right, h1 -> Left
+    const costB = calculateDistance2D(h0, lastRightPos) + calculateDistance2D(h1, lastLeftPos);
+
+    if (costA <= costB) {
+      return [
+        { puppetSlot: 'Left', landmarks: h0.landmarks },
+        { puppetSlot: 'Right', landmarks: h1.landmarks },
+      ];
+    } else {
+      return [
+        { puppetSlot: 'Right', landmarks: h0.landmarks },
+        { puppetSlot: 'Left', landmarks: h1.landmarks },
+      ];
+    }
+  }
+
+  // Fallback: assign left-most X coordinate on screen to Left Puppet, right-most X to Right Puppet
+  if (h0.x <= h1.x) {
+    return [
+      { puppetSlot: 'Left', landmarks: h0.landmarks },
+      { puppetSlot: 'Right', landmarks: h1.landmarks },
+    ];
+  } else {
+    return [
+      { puppetSlot: 'Right', landmarks: h0.landmarks },
+      { puppetSlot: 'Left', landmarks: h1.landmarks },
+    ];
+  }
 }
 
 /**
@@ -97,12 +188,24 @@ export function processHandLandmarks(
     y: palmCenter.y * canvasHeight,
   };
 
-  // LERP smoothing
+  // Adaptive LERP + Outlier Jump Rejection
   let smoothedPosition: Point2D;
   if (prevSmoothedPos) {
+    const distDelta = calculateDistance2D(prevSmoothedPos, rawPositionPixels);
+
+    // Reject erratic jumps (> 250px in 1 frame) to stop teleporting
+    if (distDelta > 250) {
+      const scaleStep = 250 / distDelta;
+      rawPositionPixels.x = prevSmoothedPos.x + (rawPositionPixels.x - prevSmoothedPos.x) * scaleStep;
+      rawPositionPixels.y = prevSmoothedPos.y + (rawPositionPixels.y - prevSmoothedPos.y) * scaleStep;
+    }
+
+    // Adaptive alpha based on base alpha parameter and movement velocity
+    const adaptiveAlpha = clamp(alpha * 0.5 + (distDelta / 150) * 0.25, 0.15, 0.6);
+
     smoothedPosition = {
-      x: lerp(prevSmoothedPos.x, rawPositionPixels.x, alpha),
-      y: lerp(prevSmoothedPos.y, rawPositionPixels.y, alpha),
+      x: lerp(prevSmoothedPos.x, rawPositionPixels.x, adaptiveAlpha),
+      y: lerp(prevSmoothedPos.y, rawPositionPixels.y, adaptiveAlpha),
     };
   } else {
     smoothedPosition = { ...rawPositionPixels };
@@ -134,8 +237,6 @@ export function processHandLandmarks(
   };
 
   // 100% EXCLUSIVE Index Finger Flexion for Mouth Opening
-  // Extended index finger (far from MCP) -> mouth closed (0.0)
-  // Bent/flexed index finger (close to MCP) -> mouth open (1.0)
   const indexLengthCurrent = calculateDistance2D({ x: indexTip.x, y: indexTip.y }, { x: indexMcp.x, y: indexMcp.y });
   const indexLengthMax = calculateDistance2D({ x: indexPip.x, y: indexPip.y }, { x: indexMcp.x, y: indexMcp.y }) * 2.2;
   const mouthOpenRatio = clamp((indexLengthMax - indexLengthCurrent) / (indexLengthMax * 0.5), 0.0, 1.0);
