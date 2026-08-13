@@ -75,6 +75,7 @@ export class PuppetRenderer {
       height: this.height,
       backgroundColor: 0x1e1e2e,
       antialias: true,
+      preference: 'webgl',
       resolution: window.devicePixelRatio || 1,
       autoDensity: true,
     });
