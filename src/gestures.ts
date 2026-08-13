@@ -9,6 +9,14 @@ export interface Point3D {
   z: number;
 }
 
+export interface LimbOffsets {
+  head: Point2D;
+  leftArm: Point2D;
+  rightArm: Point2D;
+  leftLeg: Point2D;
+  rightLeg: Point2D;
+}
+
 export interface HandState {
   handType: 'Left' | 'Right';
   wristPosition: Point2D; // Normalized (0 to 1, mirrored X)
@@ -20,6 +28,7 @@ export interface HandState {
   fingerSplay: number; // Continuous 0.0 (fist/together) to 1.0 (spread fingers)
   isWinking: boolean; // True if index finger folded
   rotation: number; // Angle in radians
+  limbs: LimbOffsets; // Dynamic 5-finger articulated limb positions
 }
 
 /**
@@ -53,7 +62,7 @@ export function calculateAngleRadians(p1: Point2D, p2: Point2D): number {
 }
 
 /**
- * Processes 21 hand landmarks from MediaPipe Hands and produces a HandState object.
+ * Processes 21 hand landmarks from MediaPipe Hands and produces a HandState object with articulated limbs.
  */
 export function processHandLandmarks(
   landmarks: Point3D[],
@@ -72,18 +81,20 @@ export function processHandLandmarks(
   }));
 
   const wrist = mirroredLandmarks[0] || { x: 0.5, y: 0.5, z: 0 };
-  const middleMCP = mirroredLandmarks[9] || { x: 0.5, y: 0.3, z: 0 };
-  const thumbTip = mirroredLandmarks[4] || { x: 0.4, y: 0.4, z: 0 };
-  const indexTip = mirroredLandmarks[8] || { x: 0.4, y: 0.4, z: 0 };
-  const indexPip = mirroredLandmarks[6] || { x: 0.4, y: 0.4, z: 0 };
-  const pinkyTip = mirroredLandmarks[20] || { x: 0.6, y: 0.4, z: 0 };
+  const palmCenter = mirroredLandmarks[9] || { x: 0.5, y: 0.3, z: 0 };
+  const thumbTip = mirroredLandmarks[4] || { x: 0.35, y: 0.35, z: 0 };
+  const indexTip = mirroredLandmarks[8] || { x: 0.45, y: 0.2, z: 0 };
+  const indexPip = mirroredLandmarks[6] || { x: 0.45, y: 0.28, z: 0 };
+  const middleTip = mirroredLandmarks[12] || { x: 0.5, y: 0.18, z: 0 };
+  const ringTip = mirroredLandmarks[16] || { x: 0.55, y: 0.2, z: 0 };
+  const pinkyTip = mirroredLandmarks[20] || { x: 0.6, y: 0.25, z: 0 };
 
   const wristPosition: Point2D = { x: wrist.x, y: wrist.y };
 
-  // Convert to canvas pixel space
+  // Convert torso base (palm center) to canvas pixel space
   const rawPositionPixels: Point2D = {
-    x: wrist.x * canvasWidth,
-    y: wrist.y * canvasHeight,
+    x: palmCenter.x * canvasWidth,
+    y: palmCenter.y * canvasHeight,
   };
 
   // LERP smoothing
@@ -97,7 +108,32 @@ export function processHandLandmarks(
     smoothedPosition = { ...rawPositionPixels };
   }
 
-  // Calculate pinch distance
+  // Calculate limb offset vectors relative to Palm Center (scaled to pixel coordinates)
+  const scale = 250; // Scale factor for finger movement sensitivity
+  const limbs: LimbOffsets = {
+    head: {
+      x: (indexTip.x - palmCenter.x) * scale,
+      y: (indexTip.y - palmCenter.y) * scale - 40,
+    },
+    leftArm: {
+      x: (thumbTip.x - palmCenter.x) * scale - 50,
+      y: (thumbTip.y - palmCenter.y) * scale,
+    },
+    rightArm: {
+      x: (middleTip.x - palmCenter.x) * scale + 50,
+      y: (middleTip.y - palmCenter.y) * scale,
+    },
+    leftLeg: {
+      x: (ringTip.x - palmCenter.x) * scale - 25,
+      y: (ringTip.y - palmCenter.y) * scale + 60,
+    },
+    rightLeg: {
+      x: (pinkyTip.x - palmCenter.x) * scale + 25,
+      y: (pinkyTip.y - palmCenter.y) * scale + 60,
+    },
+  };
+
+  // Calculate pinch distance between thumb and index tip
   const pinchDistance = calculateDistance2D(
     { x: thumbTip.x, y: thumbTip.y },
     { x: indexTip.x, y: indexTip.y }
@@ -105,17 +141,17 @@ export function processHandLandmarks(
 
   const isPinching = pinchDistance < pinchThreshold;
 
-  // Continuous mouth opening ratio (0.0 = pinch closed, 1.0 = wide open)
+  // Continuous mouth opening ratio
   const mouthOpenRatio = clamp((pinchDistance - 0.03) / 0.15, 0.0, 1.0);
 
-  // Finger splay metric (distance between index tip and pinky tip)
+  // Finger splay metric
   const indexPinkyDist = calculateDistance2D(
     { x: indexTip.x, y: indexTip.y },
     { x: pinkyTip.x, y: pinkyTip.y }
   );
   const fingerSplay = clamp((indexPinkyDist - 0.1) / 0.25, 0.0, 1.0);
 
-  // Winking / Expression trigger (is index finger folded down)
+  // Winking / Expression trigger
   const indexFolded = calculateDistance2D(
     { x: indexTip.x, y: indexTip.y },
     { x: wrist.x, y: wrist.y }
@@ -127,7 +163,7 @@ export function processHandLandmarks(
   // Rotation angle
   const rotation = calculateAngleRadians(
     { x: wrist.x, y: wrist.y },
-    { x: middleMCP.x, y: middleMCP.y }
+    { x: palmCenter.x, y: palmCenter.y }
   );
 
   return {
@@ -141,5 +177,6 @@ export function processHandLandmarks(
     fingerSplay,
     isWinking: indexFolded,
     rotation,
+    limbs,
   };
 }

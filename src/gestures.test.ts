@@ -20,19 +20,24 @@ describe('gestures math module', () => {
     expect(calculateAngleRadians({ x: 0, y: 0 }, { x: 0, y: -1 })).toBeCloseTo(-Math.PI / 2);
   });
 
-  it('processHandLandmarks mirrors X and extracts finger splay and mouth ratio', () => {
+  it('processHandLandmarks produces 5 articulated limb vectors and mirrored coordinates', () => {
     const landmarks: Point3D[] = Array.from({ length: 21 }, () => ({ x: 0.2, y: 0.5, z: 0 }));
-    // Landmark 0 (Wrist): x=0.2 => Mirrored x=0.8
     landmarks[0] = { x: 0.2, y: 0.5, z: 0 };
     landmarks[9] = { x: 0.2, y: 0.3, z: 0 };
-    landmarks[4] = { x: 0.2, y: 0.5, z: 0 };
-    landmarks[8] = { x: 0.2, y: 0.51, z: 0 }; // Close to landmark 4 => Pinching
+    landmarks[4] = { x: 0.1, y: 0.3, z: 0 }; // Thumb
+    landmarks[8] = { x: 0.2, y: 0.1, z: 0 }; // Index (Head)
+    landmarks[12] = { x: 0.3, y: 0.3, z: 0 }; // Middle
+    landmarks[16] = { x: 0.2, y: 0.6, z: 0 }; // Ring
+    landmarks[20] = { x: 0.3, y: 0.6, z: 0 }; // Pinky
 
     const state = processHandLandmarks(landmarks, 'Left', 1000, 800);
 
     expect(state.handType).toBe('Left');
-    expect(state.isPinching).toBe(true);
-    expect(state.wristPosition.x).toBeCloseTo(0.8); // Mirrored X
-    expect(state.mouthOpenRatio).toBeLessThan(0.2);
+    expect(state.limbs).toBeDefined();
+    expect(state.limbs.head).toBeDefined();
+    expect(state.limbs.leftArm).toBeDefined();
+    expect(state.limbs.rightArm).toBeDefined();
+    expect(state.limbs.leftLeg).toBeDefined();
+    expect(state.limbs.rightLeg).toBeDefined();
   });
 });

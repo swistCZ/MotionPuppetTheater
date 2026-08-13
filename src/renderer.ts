@@ -5,12 +5,16 @@ export type PuppetPreset = 'dragon' | 'bunny' | 'fox' | 'robot' | 'cat' | 'custo
 
 interface DynamicPuppet {
   container: Container;
-  body: Graphics;
-  leftEarWing: Graphics;
-  rightEarWing: Graphics;
+  torso: Graphics;
+  headContainer: Container;
+  headGraphic: Graphics;
   leftEye: Graphics;
   rightEye: Graphics;
   jaw: Graphics;
+  leftArm: Graphics;
+  rightArm: Graphics;
+  leftLeg: Graphics;
+  rightLeg: Graphics;
   preset: PuppetPreset;
   customSpriteClosed?: Sprite;
   customSpriteOpen?: Sprite;
@@ -61,8 +65,8 @@ export class PuppetRenderer {
     this.app.stage.addChild(this.rightPuppet.container);
 
     // Initial position offscreen
-    this.leftPuppet.container.position.set(-200, -200);
-    this.rightPuppet.container.position.set(-200, -200);
+    this.leftPuppet.container.position.set(-300, -300);
+    this.rightPuppet.container.position.set(-300, -300);
 
     // Build default character presets
     this.buildPuppetPreset('Left', 'dragon');
@@ -101,35 +105,68 @@ export class PuppetRenderer {
 
     if (!puppet.container) return;
 
-    // Smooth position update
+    // Smooth position update for Torso center
     puppet.container.position.set(state.smoothedPosition.x, state.smoothedPosition.y);
 
-    // Rotation angle
-    puppet.container.rotation = state.rotation + Math.PI / 2;
-
     if (puppet.preset === 'custom' && puppet.customSpriteClosed && puppet.customSpriteOpen) {
-      // Custom PNG sprite handling
       puppet.customSpriteClosed.visible = state.isPinching;
       puppet.customSpriteOpen.visible = !state.isPinching;
       return;
     }
 
-    // Dynamic finger-reactive animations
-    // 1. Jaw / Mouth opening based on continuous mouthOpenRatio
-    const jawDrop = state.mouthOpenRatio * 35;
-    puppet.jaw.position.y = jawDrop;
+    // 1. Position Head based on Index Finger movement
+    puppet.headContainer.position.set(state.limbs.head.x, state.limbs.head.y);
 
-    // 2. Ears / Wings / Horns wiggling based on finger splay
-    const splayAngle = (state.fingerSplay - 0.5) * 0.6;
-    puppet.leftEarWing.rotation = -splayAngle;
-    puppet.rightEarWing.rotation = splayAngle;
+    // 2. Animate Jaw / Mouth opening
+    puppet.jaw.position.y = state.mouthOpenRatio * 25;
 
-    // 3. Eye winking based on isWinking
-    if (state.isWinking) {
-      puppet.leftEye.scale.y = 0.1; // Squint/wink
-    } else {
-      puppet.leftEye.scale.y = 1.0;
-    }
+    // 3. Eye winking
+    puppet.leftEye.scale.y = state.isWinking ? 0.1 : 1.0;
+
+    // 4. Update Articulated Limbs (Arms & Legs) in real time
+    // Colors based on preset
+    const limbColor = this.getPrimaryColorForPreset(puppet.preset);
+    const strokeColor = this.getSecondaryColorForPreset(puppet.preset);
+
+    // Left Arm (driven by Thumb)
+    puppet.leftArm.clear();
+    puppet.leftArm
+      .moveTo(-25, -10)
+      .lineTo(state.limbs.leftArm.x, state.limbs.leftArm.y)
+      .stroke({ width: 12, color: strokeColor, cap: 'round' })
+      .circle(state.limbs.leftArm.x, state.limbs.leftArm.y, 10)
+      .fill(limbColor)
+      .stroke({ width: 3, color: strokeColor });
+
+    // Right Arm (driven by Middle Finger)
+    puppet.rightArm.clear();
+    puppet.rightArm
+      .moveTo(25, -10)
+      .lineTo(state.limbs.rightArm.x, state.limbs.rightArm.y)
+      .stroke({ width: 12, color: strokeColor, cap: 'round' })
+      .circle(state.limbs.rightArm.x, state.limbs.rightArm.y, 10)
+      .fill(limbColor)
+      .stroke({ width: 3, color: strokeColor });
+
+    // Left Leg (driven by Ring Finger)
+    puppet.leftLeg.clear();
+    puppet.leftLeg
+      .moveTo(-20, 30)
+      .lineTo(state.limbs.leftLeg.x, state.limbs.leftLeg.y)
+      .stroke({ width: 14, color: strokeColor, cap: 'round' })
+      .ellipse(state.limbs.leftLeg.x - 5, state.limbs.leftLeg.y + 4, 14, 8)
+      .fill(limbColor)
+      .stroke({ width: 3, color: strokeColor });
+
+    // Right Leg (driven by Pinky Finger)
+    puppet.rightLeg.clear();
+    puppet.rightLeg
+      .moveTo(20, 30)
+      .lineTo(state.limbs.rightLeg.x, state.limbs.rightLeg.y)
+      .stroke({ width: 14, color: strokeColor, cap: 'round' })
+      .ellipse(state.limbs.rightLeg.x + 5, state.limbs.rightLeg.y + 4, 14, 8)
+      .fill(limbColor)
+      .stroke({ width: 3, color: strokeColor });
   }
 
   public hideHand(handType: 'Left' | 'Right'): void {
@@ -150,13 +187,13 @@ export class PuppetRenderer {
 
     const closedSprite = new Sprite(closedTexture);
     closedSprite.anchor.set(0.5, 0.5);
-    closedSprite.width = 160;
-    closedSprite.height = 160;
+    closedSprite.width = 180;
+    closedSprite.height = 180;
 
     const openSprite = new Sprite(openTexture);
     openSprite.anchor.set(0.5, 0.5);
-    openSprite.width = 160;
-    openSprite.height = 160;
+    openSprite.width = 180;
+    openSprite.height = 180;
     openSprite.visible = false;
 
     puppet.container.addChild(closedSprite);
@@ -173,44 +210,52 @@ export class PuppetRenderer {
 
     puppet.container.removeChildren();
 
-    puppet.body.clear();
-    puppet.leftEarWing.clear();
-    puppet.rightEarWing.clear();
+    puppet.torso.clear();
+    puppet.headGraphic.clear();
     puppet.leftEye.clear();
     puppet.rightEye.clear();
     puppet.jaw.clear();
+    puppet.leftArm.clear();
+    puppet.rightArm.clear();
+    puppet.leftLeg.clear();
+    puppet.rightLeg.clear();
 
-    puppet.leftEarWing.rotation = 0;
-    puppet.rightEarWing.rotation = 0;
-    puppet.jaw.position.set(0, 0);
+    puppet.headContainer.removeChildren();
 
     switch (preset) {
       case 'dragon':
-        this.drawDragonPuppet(puppet);
+        this.drawDragonPreset(puppet);
         break;
       case 'bunny':
-        this.drawBunnyPuppet(puppet);
+        this.drawBunnyPreset(puppet);
         break;
       case 'fox':
-        this.drawFoxPuppet(puppet);
+        this.drawFoxPreset(puppet);
         break;
       case 'robot':
-        this.drawRobotPuppet(puppet);
+        this.drawRobotPreset(puppet);
         break;
       case 'cat':
-        this.drawCatPuppet(puppet);
+        this.drawCatPreset(puppet);
         break;
       default:
-        this.drawDragonPuppet(puppet);
+        this.drawDragonPreset(puppet);
         break;
     }
 
-    puppet.container.addChild(puppet.leftEarWing);
-    puppet.container.addChild(puppet.rightEarWing);
-    puppet.container.addChild(puppet.body);
-    puppet.container.addChild(puppet.jaw);
-    puppet.container.addChild(puppet.leftEye);
-    puppet.container.addChild(puppet.rightEye);
+    // Assembly order: Legs -> Arms -> Torso -> Head Container
+    puppet.container.addChild(puppet.leftLeg);
+    puppet.container.addChild(puppet.rightLeg);
+    puppet.container.addChild(puppet.leftArm);
+    puppet.container.addChild(puppet.rightArm);
+    puppet.container.addChild(puppet.torso);
+
+    puppet.headContainer.addChild(puppet.headGraphic);
+    puppet.headContainer.addChild(puppet.jaw);
+    puppet.headContainer.addChild(puppet.leftEye);
+    puppet.headContainer.addChild(puppet.rightEye);
+
+    puppet.container.addChild(puppet.headContainer);
   }
 
   private drawDefaultBackground(colorHex: number): void {
@@ -222,117 +267,135 @@ export class PuppetRenderer {
   private createEmptyPuppet(preset: PuppetPreset): DynamicPuppet {
     return {
       container: new Container(),
-      body: new Graphics(),
-      leftEarWing: new Graphics(),
-      rightEarWing: new Graphics(),
+      torso: new Graphics(),
+      headContainer: new Container(),
+      headGraphic: new Graphics(),
       leftEye: new Graphics(),
       rightEye: new Graphics(),
       jaw: new Graphics(),
+      leftArm: new Graphics(),
+      rightArm: new Graphics(),
+      leftLeg: new Graphics(),
+      rightLeg: new Graphics(),
       preset,
     };
   }
 
-  // Preset 1: Dragon / Monster
-  private drawDragonPuppet(p: DynamicPuppet): void {
-    // Wings / Horns
-    p.leftEarWing.moveTo(-20, -40).lineTo(-70, -80).lineTo(-40, -10).fill(0xf6e05e).stroke({ width: 4, color: 0x2f855a });
-    p.rightEarWing.moveTo(20, -40).lineTo(70, -80).lineTo(40, -10).fill(0xf6e05e).stroke({ width: 4, color: 0x2f855a });
-
-    // Main Head
-    p.body.circle(0, 0, 65).fill(0x48bb78).stroke({ width: 5, color: 0x2f855a });
-
-    // Eyes
-    p.leftEye.circle(-25, -20, 12).fill(0xffffff).circle(-23, -20, 5).fill(0x1a202c);
-    p.rightEye.circle(25, -20, 12).fill(0xffffff).circle(23, -20, 5).fill(0x1a202c);
-
-    // Jaw / Mouth
-    p.jaw.arc(0, 15, 25, 0, Math.PI, false).fill(0xe53e3e).stroke({ width: 4, color: 0x1a202c });
-    p.jaw.moveTo(-15, 15).lineTo(-10, 25).lineTo(-5, 15).fill(0xffffff); // Teeth
-    p.jaw.moveTo(15, 15).lineTo(10, 25).lineTo(5, 15).fill(0xffffff);
+  private getPrimaryColorForPreset(preset: PuppetPreset): number {
+    switch (preset) {
+      case 'dragon': return 0x48bb78;
+      case 'bunny': return 0xb794f4;
+      case 'fox': return 0xed8936;
+      case 'robot': return 0xc0c9d6;
+      case 'cat': return 0xf6e05e;
+      default: return 0x48bb78;
+    }
   }
 
-  // Preset 2: Bunny
-  private drawBunnyPuppet(p: DynamicPuppet): void {
-    // Long Ears
-    p.leftEarWing.ellipse(-25, -70, 14, 40).fill(0x9f7aea).stroke({ width: 4, color: 0x6b46c1 });
-    p.rightEarWing.ellipse(25, -70, 14, 40).fill(0x9f7aea).stroke({ width: 4, color: 0x6b46c1 });
-
-    // Head
-    p.body.circle(0, 0, 60).fill(0xb794f4).stroke({ width: 5, color: 0x6b46c1 });
-
-    // Eyes
-    p.leftEye.circle(-22, -15, 10).fill(0xffffff).circle(-20, -15, 4).fill(0x1a202c);
-    p.rightEye.circle(22, -15, 10).fill(0xffffff).circle(20, -15, 4).fill(0x1a202c);
-
-    // Nose & Mouth
-    p.body.poly([-6, 10, 6, 10, 0, 16]).fill(0xfbb6ce);
-    p.jaw.arc(0, 18, 18, 0, Math.PI, false).fill(0xf687b3).stroke({ width: 3, color: 0x1a202c });
+  private getSecondaryColorForPreset(preset: PuppetPreset): number {
+    switch (preset) {
+      case 'dragon': return 0x2f855a;
+      case 'bunny': return 0x6b46c1;
+      case 'fox': return 0xc05621;
+      case 'robot': return 0x4a5568;
+      case 'cat': return 0xd69e2e;
+      default: return 0x2f855a;
+    }
   }
 
-  // Preset 3: Fox
-  private drawFoxPuppet(p: DynamicPuppet): void {
-    // Pointy Ears
-    p.leftEarWing.poly([-45, -20, -25, -75, -5, -40]).fill(0xed8936).stroke({ width: 4, color: 0xc05621 });
-    p.rightEarWing.poly([45, -20, 25, -75, 5, -40]).fill(0xed8936).stroke({ width: 4, color: 0xc05621 });
+  // 1. Dragon Preset
+  private drawDragonPreset(p: DynamicPuppet): void {
+    // Torso
+    p.torso.roundRect(-30, -20, 60, 70, 20).fill(0x48bb78).stroke({ width: 4, color: 0x2f855a });
+    p.torso.roundRect(-20, -10, 40, 50, 15).fill(0xf6e05e); // Belly plate
 
     // Head
-    p.body.poly([0, 60, -65, -10, 65, -10]).fill(0xed8936).stroke({ width: 5, color: 0xc05621 });
-    p.body.poly([0, 60, -35, 10, 35, 10]).fill(0xffffff);
+    p.headGraphic.circle(0, 0, 45).fill(0x48bb78).stroke({ width: 4, color: 0x2f855a });
+    // Horns
+    p.headGraphic.poly([-20, -30, -35, -60, -10, -40]).fill(0xf6e05e).stroke({ width: 3, color: 0x2f855a });
+    p.headGraphic.poly([20, -30, 35, -60, 10, -40]).fill(0xf6e05e).stroke({ width: 3, color: 0x2f855a });
 
     // Eyes
-    p.leftEye.circle(-25, -10, 9).fill(0x1a202c);
-    p.rightEye.circle(25, -10, 9).fill(0x1a202c);
+    p.leftEye.circle(-16, -10, 9).fill(0xffffff).circle(-14, -10, 4).fill(0x1a202c);
+    p.rightEye.circle(16, -10, 9).fill(0xffffff).circle(14, -10, 4).fill(0x1a202c);
 
     // Jaw
-    p.jaw.arc(0, 25, 16, 0, Math.PI, false).fill(0xe53e3e);
+    p.jaw.arc(0, 10, 18, 0, Math.PI, false).fill(0xe53e3e).stroke({ width: 3, color: 0x1a202c });
   }
 
-  // Preset 4: Robot
-  private drawRobotPuppet(p: DynamicPuppet): void {
-    // Antennas
-    p.leftEarWing.rect(-45, -60, 8, 30).fill(0xa0aec0);
-    p.leftEarWing.circle(-41, -65, 8).fill(0x3182ce);
-    p.rightEarWing.rect(37, -60, 8, 30).fill(0xa0aec0);
-    p.rightEarWing.circle(41, -65, 8).fill(0x3182ce);
+  // 2. Bunny Preset
+  private drawBunnyPreset(p: DynamicPuppet): void {
+    // Torso
+    p.torso.roundRect(-28, -20, 56, 65, 20).fill(0xb794f4).stroke({ width: 4, color: 0x6b46c1 });
+    p.torso.circle(0, 10, 18).fill(0xffffff); // White belly
+
+    // Head
+    p.headGraphic.circle(0, 0, 42).fill(0xb794f4).stroke({ width: 4, color: 0x6b46c1 });
+    // Long Ears
+    p.headGraphic.ellipse(-18, -55, 10, 30).fill(0xb794f4).stroke({ width: 3, color: 0x6b46c1 });
+    p.headGraphic.ellipse(18, -55, 10, 30).fill(0xb794f4).stroke({ width: 3, color: 0x6b46c1 });
+
+    // Eyes
+    p.leftEye.circle(-15, -8, 8).fill(0xffffff).circle(-13, -8, 3).fill(0x1a202c);
+    p.rightEye.circle(15, -8, 8).fill(0xffffff).circle(13, -8, 3).fill(0x1a202c);
+
+    // Jaw
+    p.jaw.arc(0, 10, 15, 0, Math.PI, false).fill(0xf687b3).stroke({ width: 2, color: 0x1a202c });
+  }
+
+  // 3. Fox Preset
+  private drawFoxPreset(p: DynamicPuppet): void {
+    // Torso
+    p.torso.roundRect(-30, -20, 60, 65, 18).fill(0xed8936).stroke({ width: 4, color: 0xc05621 });
+    p.torso.ellipse(0, 12, 16, 22).fill(0xffffff); // White chest
+
+    // Head
+    p.headGraphic.poly([0, 40, -45, -10, 45, -10]).fill(0xed8936).stroke({ width: 4, color: 0xc05621 });
+    p.headGraphic.poly([-30, -10, -20, -50, -5, -25]).fill(0xed8936).stroke({ width: 3, color: 0xc05621 }); // Ears
+    p.headGraphic.poly([30, -10, 20, -50, 5, -25]).fill(0xed8936).stroke({ width: 3, color: 0xc05621 });
+
+    // Eyes
+    p.leftEye.circle(-18, -5, 7).fill(0x1a202c);
+    p.rightEye.circle(18, -5, 7).fill(0x1a202c);
+
+    // Jaw
+    p.jaw.arc(0, 16, 14, 0, Math.PI, false).fill(0xe53e3e);
+  }
+
+  // 4. Robot Preset
+  private drawRobotPreset(p: DynamicPuppet): void {
+    // Torso Box
+    p.torso.roundRect(-35, -20, 70, 70, 10).fill(0xc0c9d6).stroke({ width: 4, color: 0x4a5568 });
+    p.torso.rect(-18, -5, 36, 25).fill(0x3182ce).stroke({ width: 2, color: 0x2d3748 }); // Screen
 
     // Head Box
-    p.body.roundRect(-55, -45, 110, 90, 12).fill(0xc0c9d6).stroke({ width: 5, color: 0x4a5568 });
-
-    // Visor / Eyes
-    p.leftEye.rect(-35, -25, 25, 18).fill(0x3182ce).rect(-30, -20, 8, 8).fill(0x63b3ed);
-    p.rightEye.rect(10, -25, 25, 18).fill(0x3182ce).rect(15, -20, 8, 8).fill(0x63b3ed);
-
-    // Mechanical Jaw
-    p.jaw.rect(-30, 12, 60, 20).fill(0x4a5568).stroke({ width: 3, color: 0x2d3748 });
-    p.jaw.rect(-25, 16, 50, 4).fill(0x3182ce);
-  }
-
-  // Preset 5: Cat / Tiger
-  private drawCatPuppet(p: DynamicPuppet): void {
-    // Cat Ears
-    p.leftEarWing.poly([-45, -20, -30, -65, -10, -35]).fill(0xecc94b).stroke({ width: 4, color: 0xd69e2e });
-    p.rightEarWing.poly([45, -20, 30, -65, 10, -35]).fill(0xecc94b).stroke({ width: 4, color: 0xd69e2e });
-
-    // Head
-    p.body.circle(0, 0, 60).fill(0xf6e05e).stroke({ width: 5, color: 0xd69e2e });
-
-    // Tiger Stripes
-    p.body.poly([0, -55, -10, -40, 10, -40]).fill(0x1a202c);
-    p.body.poly([-55, 0, -40, -10, -40, 10]).fill(0x1a202c);
-    p.body.poly([55, 0, 40, -10, 40, 10]).fill(0x1a202c);
+    p.headGraphic.roundRect(-38, -35, 76, 55, 8).fill(0xc0c9d6).stroke({ width: 4, color: 0x4a5568 });
+    p.headGraphic.rect(-4, -50, 8, 15).fill(0xa0aec0); // Antenna
+    p.headGraphic.circle(0, -53, 6).fill(0x3182ce);
 
     // Eyes
-    p.leftEye.ellipse(-22, -15, 10, 12).fill(0x48bb78).circle(-22, -15, 4).fill(0x1a202c);
-    p.rightEye.ellipse(22, -15, 10, 12).fill(0x48bb78).circle(22, -15, 4).fill(0x1a202c);
-
-    // Whiskers
-    p.body.moveTo(-25, 10).lineTo(-60, 5);
-    p.body.moveTo(-25, 15).lineTo(-58, 20);
-    p.body.moveTo(25, 10).lineTo(60, 5);
-    p.body.moveTo(25, 15).lineTo(58, 20);
-    p.body.stroke({ width: 3, color: 0x1a202c });
+    p.leftEye.rect(-25, -20, 18, 14).fill(0x3182ce);
+    p.rightEye.rect(7, -20, 18, 14).fill(0x3182ce);
 
     // Jaw
-    p.jaw.arc(0, 18, 18, 0, Math.PI, false).fill(0xe53e3e).stroke({ width: 3, color: 0x1a202c });
+    p.jaw.rect(-20, 5, 40, 12).fill(0x4a5568);
+  }
+
+  // 5. Cat Preset
+  private drawCatPreset(p: DynamicPuppet): void {
+    // Torso
+    p.torso.roundRect(-28, -20, 56, 65, 20).fill(0xf6e05e).stroke({ width: 4, color: 0xd69e2e });
+
+    // Head
+    p.headGraphic.circle(0, 0, 42).fill(0xf6e05e).stroke({ width: 4, color: 0xd69e2e });
+    p.headGraphic.poly([-30, -15, -20, -50, -5, -25]).fill(0xf6e05e).stroke({ width: 3, color: 0xd69e2e }); // Ears
+    p.headGraphic.poly([30, -15, 20, -50, 5, -25]).fill(0xf6e05e).stroke({ width: 3, color: 0xd69e2e });
+
+    // Eyes
+    p.leftEye.ellipse(-15, -8, 8, 10).fill(0x48bb78).circle(-15, -8, 3).fill(0x1a202c);
+    p.rightEye.ellipse(15, -8, 8, 10).fill(0x48bb78).circle(15, -8, 3).fill(0x1a202c);
+
+    // Jaw
+    p.jaw.arc(0, 10, 15, 0, Math.PI, false).fill(0xe53e3e).stroke({ width: 2, color: 0x1a202c });
   }
 }
