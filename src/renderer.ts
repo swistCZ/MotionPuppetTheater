@@ -69,6 +69,10 @@ export class PuppetRenderer {
     this.rightThereminText = new Text({ text: 'Volume (%)', style: textStyle });
   }
 
+  public getCanvasElement(): HTMLCanvasElement {
+    return this.app.canvas as HTMLCanvasElement;
+  }
+
   public async initialize(parentElement: HTMLElement): Promise<void> {
     await this.app.init({
       width: this.width,

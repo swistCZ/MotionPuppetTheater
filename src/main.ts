@@ -8,6 +8,7 @@ import {
 } from './gestures';
 import { PuppetRenderer, PuppetPreset } from './renderer';
 import { ThereminSynth } from './theremin';
+import { StageRecorder } from './recorder';
 import { Results, HAND_CONNECTIONS } from '@mediapipe/hands';
 import { drawConnectors, drawLandmarks } from '@mediapipe/drawing_utils';
 
@@ -15,12 +16,14 @@ class AppManager {
   private tracker: HandTracker;
   private renderer: PuppetRenderer;
   private theremin: ThereminSynth;
+  private recorder: StageRecorder;
 
   private videoElement: HTMLVideoElement;
   private debugCanvas: HTMLCanvasElement;
   private debugCtx: CanvasRenderingContext2D;
   private statusBanner: HTMLElement;
   private fpsBadge: HTMLElement;
+  private recBadge: HTMLElement;
 
   private showDebugOverlay: boolean = false;
   private isMotionFrozen: boolean = false;
@@ -42,6 +45,7 @@ class AppManager {
     this.debugCtx = this.debugCanvas.getContext('2d')!;
     this.statusBanner = document.getElementById('status-banner') as HTMLElement;
     this.fpsBadge = document.getElementById('fps-badge') as HTMLElement;
+    this.recBadge = document.getElementById('rec-badge') as HTMLElement;
 
     const stageContainer = document.getElementById('pixi-viewport') as HTMLElement;
     const width = stageContainer.clientWidth || window.innerWidth;
@@ -50,6 +54,7 @@ class AppManager {
     this.tracker = new HandTracker(this.videoElement);
     this.renderer = new PuppetRenderer(width, height);
     this.theremin = new ThereminSynth();
+    this.recorder = new StageRecorder();
 
     this.init(stageContainer);
   }
@@ -74,6 +79,7 @@ class AppManager {
 
   private setupUIControls(): void {
     const btnCamera = document.getElementById('btn-camera') as HTMLButtonElement;
+    const btnRecord = document.getElementById('btn-record') as HTMLButtonElement;
     const btnToggleDebug = document.getElementById('btn-toggle-debug') as HTMLButtonElement;
     const btnToggleFreeze = document.getElementById('btn-toggle-freeze') as HTMLButtonElement;
     const btnToggleTheremin = document.getElementById('btn-toggle-theremin') as HTMLButtonElement;
@@ -110,6 +116,39 @@ class AppManager {
         );
 
         this.hideStatus();
+      }
+    });
+
+    // Toggle Stage Video Recording
+    btnRecord.addEventListener('click', () => {
+      if (this.recorder.getIsRecording()) {
+        this.recorder.stop();
+        btnRecord.textContent = '🔴 Nahrávat';
+        btnRecord.classList.remove('btn-secondary');
+        btnRecord.classList.add('btn-danger');
+        this.recBadge.classList.add('hidden');
+        this.showStatus('Nahrávání dokončeno. Ukládám video na disk...');
+        setTimeout(() => this.hideStatus(), 3000);
+      } else {
+        const audioNode = this.theremin.isEnabled() ? this.theremin.getAudioStreamNode() : undefined;
+        const started = this.recorder.start(
+          this.renderer.getCanvasElement(),
+          audioNode,
+          (elapsedText) => {
+            this.recBadge.textContent = `🔴 REC ${elapsedText}`;
+          }
+        );
+
+        if (started) {
+          btnRecord.textContent = '⏹️ Uložit';
+          btnRecord.classList.remove('btn-danger');
+          btnRecord.classList.add('btn-secondary');
+          this.recBadge.classList.remove('hidden');
+          this.showStatus('Spuštěno nahrávání videa divadla v 60 FPS...');
+          setTimeout(() => this.hideStatus(), 3000);
+        } else {
+          this.showStatus('Chyba: Prohlížeč nepodporuje nahrávání videa z plátna.');
+        }
       }
     });
 

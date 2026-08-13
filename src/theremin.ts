@@ -2,6 +2,7 @@ export class ThereminSynth {
   private audioCtx: AudioContext | null = null;
   private oscillator: OscillatorNode | null = null;
   private gainNode: GainNode | null = null;
+  private streamDest: MediaStreamAudioDestinationNode | null = null;
   private isActive: boolean = false;
 
   private minFreq: number = 130; // C3
@@ -27,6 +28,17 @@ export class ThereminSynth {
 
   public isEnabled(): boolean {
     return this.isActive;
+  }
+
+  public getAudioStreamNode(): MediaStreamAudioDestinationNode | undefined {
+    if (this.audioCtx && this.gainNode) {
+      if (!this.streamDest) {
+        this.streamDest = this.audioCtx.createMediaStreamDestination();
+        this.gainNode.connect(this.streamDest);
+      }
+      return this.streamDest;
+    }
+    return undefined;
   }
 
   private startAudio(): void {

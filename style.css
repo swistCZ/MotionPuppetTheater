@@ -5,6 +5,7 @@
   --text-light: #e6edf3;
   --accent-blue: #58a6ff;
   --accent-green: #3fb950;
+  --accent-red: #f85149;
   --accent-purple: #bc8cff;
   --accent-amber: #d29922;
 }
@@ -49,7 +50,7 @@ body {
 .brand {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-shrink: 0;
 }
 
@@ -68,6 +69,27 @@ body {
   border: 1px solid rgba(63, 185, 80, 0.3);
   padding: 2px 8px;
   border-radius: 12px;
+}
+
+.rec-badge {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #ffffff;
+  background: rgba(248, 81, 73, 0.85);
+  border: 1px solid rgba(248, 81, 73, 1);
+  padding: 2px 8px;
+  border-radius: 12px;
+  animation: recPulse 1.2s infinite ease-in-out;
+}
+
+.rec-badge.hidden {
+  display: none;
+}
+
+@keyframes recPulse {
+  0% { opacity: 1.0; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(0.95); }
+  100% { opacity: 1.0; transform: scale(1); }
 }
 
 .control-group {
@@ -117,6 +139,17 @@ body {
 .btn-secondary:hover {
   background-color: rgba(255, 255, 255, 0.12);
   border-color: rgba(255, 255, 255, 0.25);
+}
+
+.btn-danger {
+  background-color: var(--accent-red);
+  color: #ffffff;
+  border-color: transparent;
+  box-shadow: 0 0 12px rgba(248, 81, 73, 0.4);
+}
+
+.btn-danger:hover {
+  background-color: #ff6e67;
 }
 
 .select-input {
