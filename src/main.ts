@@ -125,11 +125,13 @@ class AppManager {
     // Toggle Theremin Audio Synthesizer
     btnToggleTheremin.addEventListener('click', () => {
       const active = this.theremin.toggle();
+      this.renderer.setThereminMode(active);
+
       if (active) {
         btnToggleTheremin.textContent = '🎵 Theremin (ZAP)';
         btnToggleTheremin.classList.remove('btn-secondary');
         btnToggleTheremin.classList.add('btn-primary');
-        this.showStatus('Theremin zvuky aktivní!');
+        this.showStatus('Theremin zvuky aktivní! Levá ruka = frekvence, pravá ruka = hlasitost.');
       } else {
         btnToggleTheremin.textContent = '🎵 Theremin';
         btnToggleTheremin.classList.remove('btn-primary');
@@ -215,8 +217,8 @@ class AppManager {
     }
 
     const detectedHands = new Set<'Left' | 'Right'>();
-    let leftY: number | undefined;
-    let rightY: number | undefined;
+    let leftHandState: HandState | undefined;
+    let rightHandState: HandState | undefined;
 
     if (results.multiHandLandmarks && results.multiHandedness) {
       for (let i = 0; i < results.multiHandLandmarks.length; i++) {
@@ -238,11 +240,10 @@ class AppManager {
           0.35 // LERP alpha
         );
 
-        // Track Y position for Theremin synth
         if (handType === 'Left') {
-          leftY = state.wristPosition.y;
+          leftHandState = state;
         } else {
-          rightY = state.wristPosition.y;
+          rightHandState = state;
         }
 
         // Store updated position
@@ -274,9 +275,20 @@ class AppManager {
       }
     }
 
-    // Update Theremin sound synthesizer
+    // Update Theremin audio & visual orbs
     if (this.theremin.isEnabled()) {
+      const leftY = leftHandState ? leftHandState.wristPosition.y : undefined;
+      const rightY = rightHandState ? rightHandState.wristPosition.y : undefined;
+
       this.theremin.updateHands(leftY, rightY);
+
+      // Compute display metrics
+      const activePitchY = leftY !== undefined ? leftY : rightY;
+      const pitchRatio = activePitchY !== undefined ? 1.0 - Math.max(0, Math.min(1, activePitchY)) : 0.5;
+      const freq = 130 + pitchRatio * 750;
+      const volRatio = rightY !== undefined ? 1.0 - Math.max(0, Math.min(1, rightY)) : (leftY !== undefined ? 0.5 : 0);
+
+      this.renderer.updateThereminVisuals(leftHandState, rightHandState, freq, volRatio);
     }
 
     // Handle missing hand frames with 15-frame persistence buffer to eliminate flickering

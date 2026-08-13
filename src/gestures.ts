@@ -24,9 +24,8 @@ export interface HandState {
   smoothedPosition: Point2D; // LERP smoothed position
   pinchDistance: number; // Normalized distance between thumb and index tips
   isPinching: boolean; // True if mouth closed
-  mouthOpenRatio: number; // Continuous 0.0 (closed) to 1.0 (fully open)
+  mouthOpenRatio: number; // Continuous 0.0 (closed) to 1.0 (fully open), driven by index finger bending
   fingerSplay: number; // Continuous 0.0 (fist/together) to 1.0 (spread fingers)
-  isWinking: boolean; // True if index finger folded
   rotation: number; // Angle in radians
   limbs: LimbOffsets; // Dynamic 5-finger articulated limb positions
 }
@@ -109,7 +108,7 @@ export function processHandLandmarks(
   }
 
   // Calculate limb offset vectors relative to Palm Center (scaled to pixel coordinates)
-  const scale = 250; // Scale factor for finger movement sensitivity
+  const scale = 250;
   const limbs: LimbOffsets = {
     head: {
       x: (indexTip.x - palmCenter.x) * scale,
@@ -141,8 +140,14 @@ export function processHandLandmarks(
 
   const isPinching = pinchDistance < pinchThreshold;
 
-  // Continuous mouth opening ratio
-  const mouthOpenRatio = clamp((pinchDistance - 0.03) / 0.15, 0.0, 1.0);
+  // Index finger bend ratio (distance from index tip to wrist relative to PIP joint)
+  const indexDistWrist = calculateDistance2D({ x: indexTip.x, y: indexTip.y }, { x: wrist.x, y: wrist.y });
+  const indexPipDistWrist = calculateDistance2D({ x: indexPip.x, y: indexPip.y }, { x: wrist.x, y: wrist.y });
+  const indexBend = clamp((indexPipDistWrist - indexDistWrist + 0.05) / 0.1, 0.0, 1.0);
+
+  // Combined mouth opening ratio driven by index finger bending + pinch distance
+  const pinchMouthRatio = clamp((pinchDistance - 0.03) / 0.15, 0.0, 1.0);
+  const mouthOpenRatio = clamp(pinchMouthRatio * 0.5 + indexBend * 0.5, 0.0, 1.0);
 
   // Finger splay metric
   const indexPinkyDist = calculateDistance2D(
@@ -150,15 +155,6 @@ export function processHandLandmarks(
     { x: pinkyTip.x, y: pinkyTip.y }
   );
   const fingerSplay = clamp((indexPinkyDist - 0.1) / 0.25, 0.0, 1.0);
-
-  // Winking / Expression trigger
-  const indexFolded = calculateDistance2D(
-    { x: indexTip.x, y: indexTip.y },
-    { x: wrist.x, y: wrist.y }
-  ) < calculateDistance2D(
-    { x: indexPip.x, y: indexPip.y },
-    { x: wrist.x, y: wrist.y }
-  );
 
   // Rotation angle
   const rotation = calculateAngleRadians(
@@ -175,7 +171,6 @@ export function processHandLandmarks(
     isPinching,
     mouthOpenRatio,
     fingerSplay,
-    isWinking: indexFolded,
     rotation,
     limbs,
   };

@@ -1,4 +1,4 @@
-import { Application, Container, Sprite, Graphics, Assets, Texture } from 'pixi.js';
+import { Application, Container, Sprite, Graphics, Assets, Texture, Text, TextStyle } from 'pixi.js';
 import { HandState } from './gestures';
 
 export type PuppetPreset = 'dragon' | 'bunny' | 'fox' | 'robot' | 'cat' | 'custom';
@@ -27,6 +27,15 @@ export class PuppetRenderer {
   private leftPuppet: DynamicPuppet;
   private rightPuppet: DynamicPuppet;
 
+  // Theremin Visual Orbs
+  private thereminContainer: Container;
+  private leftThereminOrb: Graphics;
+  private rightThereminOrb: Graphics;
+  private leftThereminText: Text;
+  private rightThereminText: Text;
+  private isThereminMode: boolean = false;
+  private animFrameCounter: number = 0;
+
   // Background
   private bgGraphics: Graphics;
   private bgSprite: Sprite | null = null;
@@ -43,6 +52,21 @@ export class PuppetRenderer {
     this.bgGraphics = new Graphics();
     this.leftPuppet = this.createEmptyPuppet('dragon');
     this.rightPuppet = this.createEmptyPuppet('bunny');
+
+    this.thereminContainer = new Container();
+    this.leftThereminOrb = new Graphics();
+    this.rightThereminOrb = new Graphics();
+
+    const textStyle = new TextStyle({
+      fontFamily: 'sans-serif',
+      fontSize: 16,
+      fontWeight: 'bold',
+      fill: '#ffffff',
+      stroke: { color: '#000000', width: 3 },
+    });
+
+    this.leftThereminText = new Text({ text: 'Pitch (Hz)', style: textStyle });
+    this.rightThereminText = new Text({ text: 'Volume (%)', style: textStyle });
   }
 
   public async initialize(parentElement: HTMLElement): Promise<void> {
@@ -64,6 +88,14 @@ export class PuppetRenderer {
     // Add puppet containers
     this.app.stage.addChild(this.leftPuppet.container);
     this.app.stage.addChild(this.rightPuppet.container);
+
+    // Add Theremin container
+    this.thereminContainer.addChild(this.leftThereminOrb);
+    this.thereminContainer.addChild(this.rightThereminOrb);
+    this.thereminContainer.addChild(this.leftThereminText);
+    this.thereminContainer.addChild(this.rightThereminText);
+    this.thereminContainer.visible = false;
+    this.app.stage.addChild(this.thereminContainer);
 
     // Initial position offscreen
     this.leftPuppet.container.position.set(-300, -300);
@@ -87,6 +119,67 @@ export class PuppetRenderer {
     }
   }
 
+  public setThereminMode(enabled: boolean): void {
+    this.isThereminMode = enabled;
+    this.thereminContainer.visible = enabled;
+
+    // Dim/hide puppets when Theremin mode is ON
+    this.leftPuppet.container.alpha = enabled ? 0.2 : 1.0;
+    this.rightPuppet.container.alpha = enabled ? 0.2 : 1.0;
+  }
+
+  public updateThereminVisuals(
+    leftHandState?: HandState,
+    rightHandState?: HandState,
+    frequency: number = 440,
+    volumeRatio: number = 0.5
+  ): void {
+    if (!this.isThereminMode) return;
+
+    this.animFrameCounter++;
+    const pulsePhase = Math.sin(this.animFrameCounter * 0.15) * 8;
+
+    // 1. Left Hand - Pitch Orb (Glowing Cyan/Blue)
+    if (leftHandState) {
+      const pos = leftHandState.smoothedPosition;
+      this.leftThereminOrb.clear();
+
+      // Outer Pulsing Aura
+      const auraRadius = 45 + pulsePhase + (frequency / 800) * 15;
+      this.leftThereminOrb.circle(pos.x, pos.y, auraRadius).fill({ color: 0x38bdf8, alpha: 0.25 });
+
+      // Inner Core
+      this.leftThereminOrb.circle(pos.x, pos.y, 28).fill(0x0284c7).stroke({ width: 4, color: 0xe0f2fe });
+
+      this.leftThereminText.text = `🎵 ${Math.round(frequency)} Hz`;
+      this.leftThereminText.position.set(pos.x - 40, pos.y - 65);
+      this.leftThereminText.visible = true;
+    } else {
+      this.leftThereminOrb.clear();
+      this.leftThereminText.visible = false;
+    }
+
+    // 2. Right Hand - Volume Orb (Glowing Magenta/Pink)
+    if (rightHandState) {
+      const pos = rightHandState.smoothedPosition;
+      this.rightThereminOrb.clear();
+
+      // Outer Pulsing Aura proportional to volume
+      const auraRadius = 35 + volumeRatio * 35 + pulsePhase;
+      this.rightThereminOrb.circle(pos.x, pos.y, auraRadius).fill({ color: 0xf43f5e, alpha: 0.3 });
+
+      // Inner Core
+      this.rightThereminOrb.circle(pos.x, pos.y, 28).fill(0xe11d48).stroke({ width: 4, color: 0xffe4e6 });
+
+      this.rightThereminText.text = `🔊 ${Math.round(volumeRatio * 100)}% Vol`;
+      this.rightThereminText.position.set(pos.x - 45, pos.y - 65);
+      this.rightThereminText.visible = true;
+    } else {
+      this.rightThereminOrb.clear();
+      this.rightThereminText.visible = false;
+    }
+  }
+
   public setBackgroundColor(colorHex: number): void {
     this.currentBgColorHex = colorHex;
     if (this.bgSprite) {
@@ -97,7 +190,6 @@ export class PuppetRenderer {
 
   public async setCustomBackgroundDataUrl(dataUrl: string): Promise<void> {
     try {
-      // Clear solid color so it does not obscure the sprite
       this.bgGraphics.clear();
 
       let texture: Texture;
@@ -140,13 +232,10 @@ export class PuppetRenderer {
     // 1. Position Head based on Index Finger movement
     puppet.headContainer.position.set(state.limbs.head.x, state.limbs.head.y);
 
-    // 2. Animate Jaw / Mouth opening
-    puppet.jaw.position.y = state.mouthOpenRatio * 25;
+    // 2. Animate Jaw / Mouth opening directly driven by index finger bending
+    puppet.jaw.position.y = state.mouthOpenRatio * 28;
 
-    // 3. Eye winking
-    puppet.leftEye.scale.y = state.isWinking ? 0.1 : 1.0;
-
-    // 4. Update Articulated Limbs (Arms & Legs) in real time
+    // 3. Update Articulated Limbs (Arms & Legs) in real time
     const limbColor = this.getPrimaryColorForPreset(puppet.preset);
     const strokeColor = this.getSecondaryColorForPreset(puppet.preset);
 
