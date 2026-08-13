@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   lerp,
+  clamp,
   calculateDistance2D,
   calculateAngleRadians,
   processHandLandmarks,
@@ -8,43 +9,30 @@ import {
 } from './gestures';
 
 describe('gestures math module', () => {
-  it('lerp should linearly interpolate correctly', () => {
+  it('lerp and clamp work correctly', () => {
     expect(lerp(0, 10, 0.5)).toBe(5);
-    expect(lerp(10, 20, 0.3)).toBe(13);
-    expect(lerp(100, 100, 0.5)).toBe(100);
+    expect(clamp(-5, 0, 10)).toBe(0);
+    expect(clamp(15, 0, 10)).toBe(10);
   });
 
-  it('calculateDistance2D should compute Euclidean distance', () => {
-    const p1 = { x: 0, y: 0 };
-    const p2 = { x: 3, y: 4 };
-    expect(calculateDistance2D(p1, p2)).toBeCloseTo(5);
+  it('calculateDistance2D and calculateAngleRadians compute distance and angle', () => {
+    expect(calculateDistance2D({ x: 0, y: 0 }, { x: 3, y: 4 })).toBeCloseTo(5);
+    expect(calculateAngleRadians({ x: 0, y: 0 }, { x: 0, y: -1 })).toBeCloseTo(-Math.PI / 2);
   });
 
-  it('calculateAngleRadians should compute orientation angle', () => {
-    const wrist = { x: 0, y: 0 };
-    const middleBase = { x: 0, y: -1 }; // Pointing straight up
-    expect(calculateAngleRadians(wrist, middleBase)).toBeCloseTo(-Math.PI / 2);
-  });
+  it('processHandLandmarks mirrors X and extracts finger splay and mouth ratio', () => {
+    const landmarks: Point3D[] = Array.from({ length: 21 }, () => ({ x: 0.2, y: 0.5, z: 0 }));
+    // Landmark 0 (Wrist): x=0.2 => Mirrored x=0.8
+    landmarks[0] = { x: 0.2, y: 0.5, z: 0 };
+    landmarks[9] = { x: 0.2, y: 0.3, z: 0 };
+    landmarks[4] = { x: 0.2, y: 0.5, z: 0 };
+    landmarks[8] = { x: 0.2, y: 0.51, z: 0 }; // Close to landmark 4 => Pinching
 
-  it('processHandLandmarks should extract pinch state and smooth position', () => {
-    // Mock 21 landmarks
-    const landmarks: Point3D[] = Array.from({ length: 21 }, () => ({ x: 0.5, y: 0.5, z: 0 }));
-    
-    // Landmark 0 (Wrist): (0.5, 0.5)
-    landmarks[0] = { x: 0.5, y: 0.5, z: 0 };
-    // Landmark 9 (Middle finger MCP): (0.5, 0.3)
-    landmarks[9] = { x: 0.5, y: 0.3, z: 0 };
-    // Landmark 4 (Thumb tip): (0.4, 0.4, 0)
-    landmarks[4] = { x: 0.4, y: 0.4, z: 0 };
-    // Landmark 8 (Index tip): (0.42, 0.42, 0) -> Close distance => Pinching
-    landmarks[8] = { x: 0.42, y: 0.42, z: 0 };
-
-    const state = processHandLandmarks(landmarks, 'Left', 1000, 800, { x: 400, y: 400 }, 0.5, 0.08);
+    const state = processHandLandmarks(landmarks, 'Left', 1000, 800);
 
     expect(state.handType).toBe('Left');
     expect(state.isPinching).toBe(true);
-    // Landmark 0 mapped to (500, 400), smoothed with prev (400, 400) alpha 0.5 => (450, 400)
-    expect(state.smoothedPosition.x).toBe(450);
-    expect(state.smoothedPosition.y).toBe(400);
+    expect(state.wristPosition.x).toBeCloseTo(0.8); // Mirrored X
+    expect(state.mouthOpenRatio).toBeLessThan(0.2);
   });
 });

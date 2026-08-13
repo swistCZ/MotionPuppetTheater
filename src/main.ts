@@ -1,6 +1,6 @@
 import { HandTracker } from './tracker';
 import { processHandLandmarks, HandState, Point2D } from './gestures';
-import { PuppetRenderer } from './renderer';
+import { PuppetRenderer, PuppetPreset } from './renderer';
 import { Texture } from 'pixi.js';
 import { Results, HAND_CONNECTIONS } from '@mediapipe/hands';
 import { drawConnectors, drawLandmarks } from '@mediapipe/drawing_utils';
@@ -47,6 +47,8 @@ class AppManager {
   private setupUIControls(): void {
     const btnCamera = document.getElementById('btn-camera') as HTMLButtonElement;
     const btnToggleDebug = document.getElementById('btn-toggle-debug') as HTMLButtonElement;
+    const selectLeftPuppet = document.getElementById('select-left-puppet') as HTMLSelectElement;
+    const selectRightPuppet = document.getElementById('select-right-puppet') as HTMLSelectElement;
     const selectBgColor = document.getElementById('bg-color') as HTMLSelectElement;
     const uploadBg = document.getElementById('upload-bg') as HTMLInputElement;
     const uploadLeft = document.getElementById('upload-left-closed') as HTMLInputElement;
@@ -93,6 +95,17 @@ class AppManager {
       }
     });
 
+    // Preset Selection
+    selectLeftPuppet.addEventListener('change', (e) => {
+      const preset = (e.target as HTMLSelectElement).value as PuppetPreset;
+      this.renderer.buildPuppetPreset('Left', preset);
+    });
+
+    selectRightPuppet.addEventListener('change', (e) => {
+      const preset = (e.target as HTMLSelectElement).value as PuppetPreset;
+      this.renderer.buildPuppetPreset('Right', preset);
+    });
+
     // Change Background Color
     selectBgColor.addEventListener('change', (e) => {
       const hexValue = parseInt((e.target as HTMLSelectElement).value, 16);
@@ -124,7 +137,6 @@ class AppManager {
     if (file) {
       const url = URL.createObjectURL(file);
       const texture = Texture.from(url);
-      // Use uploaded sprite for both open & closed or generate variant
       this.renderer.setCustomPuppetTextures(handType, texture, texture);
       this.showStatus(`Vlastní obrázek pro ${handType === 'Left' ? 'Levou' : 'Pravou'} loutku načten.`);
       setTimeout(() => this.hideStatus(), 3000);
@@ -139,9 +151,11 @@ class AppManager {
       this.debugCtx.save();
       this.debugCtx.clearRect(0, 0, width, height);
 
-      // Draw mirrored video background on debug canvas if available
+      // Draw mirrored video frame on debug overlay
       if (results.image) {
-        this.debugCtx.drawImage(results.image, 0, 0, width, height);
+        this.debugCtx.scale(-1, 1);
+        this.debugCtx.drawImage(results.image, -width, 0, width, height);
+        this.debugCtx.scale(-1, 1);
       }
     }
 
@@ -151,7 +165,6 @@ class AppManager {
       for (let i = 0; i < results.multiHandLandmarks.length; i++) {
         const landmarks = results.multiHandLandmarks[i];
         const handedness = results.multiHandedness[i];
-        // MediaPipe output label: "Left" or "Right"
         const handType = handedness.label as 'Left' | 'Right';
         detectedHands.add(handType);
 
@@ -173,13 +186,19 @@ class AppManager {
         // Update Pixi.js puppet
         this.renderer.updateHandState(state);
 
-        // Draw debug landmarks overlay
+        // Draw debug landmarks overlay (mirrored X)
         if (this.showDebugOverlay) {
-          drawConnectors(this.debugCtx, landmarks, HAND_CONNECTIONS, {
+          const mirroredLandmarks = landmarks.map((lm) => ({
+            x: 1.0 - lm.x,
+            y: lm.y,
+            z: lm.z,
+          }));
+
+          drawConnectors(this.debugCtx, mirroredLandmarks, HAND_CONNECTIONS, {
             color: handType === 'Left' ? '#00FF00' : '#FF00FF',
             lineWidth: 3,
           });
-          drawLandmarks(this.debugCtx, landmarks, {
+          drawLandmarks(this.debugCtx, mirroredLandmarks, {
             color: state.isPinching ? '#FF0000' : '#00FFFF',
             lineWidth: 2,
             radius: 4,
@@ -188,7 +207,7 @@ class AppManager {
       }
     }
 
-    // Hide puppets for hands that were not detected in current frame
+    // Hide puppets for hands that were not detected
     if (!detectedHands.has('Left')) {
       this.renderer.hideHand('Left');
       this.prevPositions.delete('Left');

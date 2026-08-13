@@ -1,18 +1,27 @@
 import { Application, Container, Sprite, Texture, Graphics } from 'pixi.js';
 import { HandState } from './gestures';
 
+export type PuppetPreset = 'dragon' | 'bunny' | 'fox' | 'robot' | 'cat' | 'custom';
+
+interface DynamicPuppet {
+  container: Container;
+  body: Graphics;
+  leftEarWing: Graphics;
+  rightEarWing: Graphics;
+  leftEye: Graphics;
+  rightEye: Graphics;
+  jaw: Graphics;
+  preset: PuppetPreset;
+  customSpriteClosed?: Sprite;
+  customSpriteOpen?: Sprite;
+}
+
 export class PuppetRenderer {
   private app: Application;
 
   // Puppets
-  private leftPuppetContainer: Container;
-  private rightPuppetContainer: Container;
-
-  private leftSpriteClosed: Sprite | null = null;
-  private leftSpriteOpen: Sprite | null = null;
-
-  private rightSpriteClosed: Sprite | null = null;
-  private rightSpriteOpen: Sprite | null = null;
+  private leftPuppet: DynamicPuppet;
+  private rightPuppet: DynamicPuppet;
 
   // Background
   private bgGraphics: Graphics;
@@ -26,9 +35,9 @@ export class PuppetRenderer {
     this.height = height;
     this.app = new Application();
 
-    this.leftPuppetContainer = new Container();
-    this.rightPuppetContainer = new Container();
     this.bgGraphics = new Graphics();
+    this.leftPuppet = this.createEmptyPuppet('dragon');
+    this.rightPuppet = this.createEmptyPuppet('bunny');
   }
 
   public async initialize(parentElement: HTMLElement): Promise<void> {
@@ -48,15 +57,16 @@ export class PuppetRenderer {
     this.drawDefaultBackground(0x2d3748);
 
     // Add puppet containers
-    this.app.stage.addChild(this.leftPuppetContainer);
-    this.app.stage.addChild(this.rightPuppetContainer);
+    this.app.stage.addChild(this.leftPuppet.container);
+    this.app.stage.addChild(this.rightPuppet.container);
 
     // Initial position offscreen
-    this.leftPuppetContainer.position.set(-200, -200);
-    this.rightPuppetContainer.position.set(-200, -200);
+    this.leftPuppet.container.position.set(-200, -200);
+    this.rightPuppet.container.position.set(-200, -200);
 
-    // Create default procedural puppets
-    this.createDefaultPuppets();
+    // Build default character presets
+    this.buildPuppetPreset('Left', 'dragon');
+    this.buildPuppetPreset('Right', 'bunny');
   }
 
   public resize(width: number, height: number): void {
@@ -87,31 +97,44 @@ export class PuppetRenderer {
 
   public updateHandState(state: HandState): void {
     const isLeft = state.handType === 'Left';
-    const targetContainer = isLeft ? this.leftPuppetContainer : this.rightPuppetContainer;
-    const spriteClosed = isLeft ? this.leftSpriteClosed : this.rightSpriteClosed;
-    const spriteOpen = isLeft ? this.leftSpriteOpen : this.rightSpriteOpen;
+    const puppet = isLeft ? this.leftPuppet : this.rightPuppet;
 
-    if (!targetContainer || !spriteClosed || !spriteOpen) return;
+    if (!puppet.container) return;
 
     // Smooth position update
-    targetContainer.position.set(state.smoothedPosition.x, state.smoothedPosition.y);
+    puppet.container.position.set(state.smoothedPosition.x, state.smoothedPosition.y);
 
-    // Rotation (optional adjustment based on hand angle)
-    targetContainer.rotation = state.rotation + Math.PI / 2;
+    // Rotation angle
+    puppet.container.rotation = state.rotation + Math.PI / 2;
 
-    // Mouth state toggle based on pinch gesture
-    if (state.isPinching) {
-      spriteClosed.visible = true;
-      spriteOpen.visible = false;
+    if (puppet.preset === 'custom' && puppet.customSpriteClosed && puppet.customSpriteOpen) {
+      // Custom PNG sprite handling
+      puppet.customSpriteClosed.visible = state.isPinching;
+      puppet.customSpriteOpen.visible = !state.isPinching;
+      return;
+    }
+
+    // Dynamic finger-reactive animations
+    // 1. Jaw / Mouth opening based on continuous mouthOpenRatio
+    const jawDrop = state.mouthOpenRatio * 35;
+    puppet.jaw.position.y = jawDrop;
+
+    // 2. Ears / Wings / Horns wiggling based on finger splay
+    const splayAngle = (state.fingerSplay - 0.5) * 0.6;
+    puppet.leftEarWing.rotation = -splayAngle;
+    puppet.rightEarWing.rotation = splayAngle;
+
+    // 3. Eye winking based on isWinking
+    if (state.isWinking) {
+      puppet.leftEye.scale.y = 0.1; // Squint/wink
     } else {
-      spriteClosed.visible = false;
-      spriteOpen.visible = true;
+      puppet.leftEye.scale.y = 1.0;
     }
   }
 
   public hideHand(handType: 'Left' | 'Right'): void {
-    const targetContainer = handType === 'Left' ? this.leftPuppetContainer : this.rightPuppetContainer;
-    targetContainer.position.set(-500, -500);
+    const puppet = handType === 'Left' ? this.leftPuppet : this.rightPuppet;
+    puppet.container.position.set(-500, -500);
   }
 
   public setCustomPuppetTextures(
@@ -120,9 +143,10 @@ export class PuppetRenderer {
     openTexture: Texture
   ): void {
     const isLeft = handType === 'Left';
-    const container = isLeft ? this.leftPuppetContainer : this.rightPuppetContainer;
+    const puppet = isLeft ? this.leftPuppet : this.rightPuppet;
+    puppet.preset = 'custom';
 
-    container.removeChildren();
+    puppet.container.removeChildren();
 
     const closedSprite = new Sprite(closedTexture);
     closedSprite.anchor.set(0.5, 0.5);
@@ -135,16 +159,58 @@ export class PuppetRenderer {
     openSprite.height = 160;
     openSprite.visible = false;
 
-    container.addChild(closedSprite);
-    container.addChild(openSprite);
+    puppet.container.addChild(closedSprite);
+    puppet.container.addChild(openSprite);
 
-    if (isLeft) {
-      this.leftSpriteClosed = closedSprite;
-      this.leftSpriteOpen = openSprite;
-    } else {
-      this.rightSpriteClosed = closedSprite;
-      this.rightSpriteOpen = openSprite;
+    puppet.customSpriteClosed = closedSprite;
+    puppet.customSpriteOpen = openSprite;
+  }
+
+  public buildPuppetPreset(handType: 'Left' | 'Right', preset: PuppetPreset): void {
+    const isLeft = handType === 'Left';
+    const puppet = isLeft ? this.leftPuppet : this.rightPuppet;
+    puppet.preset = preset;
+
+    puppet.container.removeChildren();
+
+    puppet.body.clear();
+    puppet.leftEarWing.clear();
+    puppet.rightEarWing.clear();
+    puppet.leftEye.clear();
+    puppet.rightEye.clear();
+    puppet.jaw.clear();
+
+    puppet.leftEarWing.rotation = 0;
+    puppet.rightEarWing.rotation = 0;
+    puppet.jaw.position.set(0, 0);
+
+    switch (preset) {
+      case 'dragon':
+        this.drawDragonPuppet(puppet);
+        break;
+      case 'bunny':
+        this.drawBunnyPuppet(puppet);
+        break;
+      case 'fox':
+        this.drawFoxPuppet(puppet);
+        break;
+      case 'robot':
+        this.drawRobotPuppet(puppet);
+        break;
+      case 'cat':
+        this.drawCatPuppet(puppet);
+        break;
+      default:
+        this.drawDragonPuppet(puppet);
+        break;
     }
+
+    puppet.container.addChild(puppet.leftEarWing);
+    puppet.container.addChild(puppet.rightEarWing);
+    puppet.container.addChild(puppet.body);
+    puppet.container.addChild(puppet.jaw);
+    puppet.container.addChild(puppet.leftEye);
+    puppet.container.addChild(puppet.rightEye);
   }
 
   private drawDefaultBackground(colorHex: number): void {
@@ -153,94 +219,120 @@ export class PuppetRenderer {
     this.bgGraphics.fill(colorHex);
   }
 
-  private createDefaultPuppets(): void {
-    // Generate Left Puppet (Green Monster)
-    const leftClosedTex = this.generateProceduralPuppetTexture('Left', false);
-    const leftOpenTex = this.generateProceduralPuppetTexture('Left', true);
-    this.setCustomPuppetTextures('Left', leftClosedTex, leftOpenTex);
-
-    // Generate Right Puppet (Purple Rabbit)
-    const rightClosedTex = this.generateProceduralPuppetTexture('Right', false);
-    const rightOpenTex = this.generateProceduralPuppetTexture('Right', true);
-    this.setCustomPuppetTextures('Right', rightClosedTex, rightOpenTex);
+  private createEmptyPuppet(preset: PuppetPreset): DynamicPuppet {
+    return {
+      container: new Container(),
+      body: new Graphics(),
+      leftEarWing: new Graphics(),
+      rightEarWing: new Graphics(),
+      leftEye: new Graphics(),
+      rightEye: new Graphics(),
+      jaw: new Graphics(),
+      preset,
+    };
   }
 
-  private generateProceduralPuppetTexture(handType: 'Left' | 'Right', isOpen: boolean): Texture {
-    const canvas = document.createElement('canvas');
-    canvas.width = 200;
-    canvas.height = 200;
-    const ctx = canvas.getContext('2d')!;
+  // Preset 1: Dragon / Monster
+  private drawDragonPuppet(p: DynamicPuppet): void {
+    // Wings / Horns
+    p.leftEarWing.moveTo(-20, -40).lineTo(-70, -80).lineTo(-40, -10).fill(0xf6e05e).stroke({ width: 4, color: 0x2f855a });
+    p.rightEarWing.moveTo(20, -40).lineTo(70, -80).lineTo(40, -10).fill(0xf6e05e).stroke({ width: 4, color: 0x2f855a });
 
-    const isLeft = handType === 'Left';
-    const primaryColor = isLeft ? '#48bb78' : '#9f7aea'; // Green vs Purple
-    const secondaryColor = isLeft ? '#2f855a' : '#6b46c1';
-
-    // Body Circle
-    ctx.beginPath();
-    ctx.arc(100, 100, 75, 0, Math.PI * 2);
-    ctx.fillStyle = primaryColor;
-    ctx.fill();
-    ctx.lineWidth = 6;
-    ctx.strokeStyle = secondaryColor;
-    ctx.stroke();
-
-    // Ears / Horns
-    if (isLeft) {
-      // Monster Horns
-      ctx.beginPath();
-      ctx.moveTo(60, 45); ctx.lineTo(40, 15); ctx.lineTo(75, 30);
-      ctx.moveTo(140, 45); ctx.lineTo(160, 15); ctx.lineTo(125, 30);
-      ctx.fillStyle = '#f6e05e';
-      ctx.fill();
-      ctx.stroke();
-    } else {
-      // Rabbit Ears
-      ctx.beginPath();
-      ctx.ellipse(65, 30, 15, 35, -0.2, 0, Math.PI * 2);
-      ctx.ellipse(135, 30, 15, 35, 0.2, 0, Math.PI * 2);
-      ctx.fillStyle = primaryColor;
-      ctx.fill();
-      ctx.stroke();
-    }
+    // Main Head
+    p.body.circle(0, 0, 65).fill(0x48bb78).stroke({ width: 5, color: 0x2f855a });
 
     // Eyes
-    ctx.beginPath();
-    ctx.arc(70, 80, 14, 0, Math.PI * 2);
-    ctx.arc(130, 80, 14, 0, Math.PI * 2);
-    ctx.fillStyle = '#ffffff';
-    ctx.fill();
+    p.leftEye.circle(-25, -20, 12).fill(0xffffff).circle(-23, -20, 5).fill(0x1a202c);
+    p.rightEye.circle(25, -20, 12).fill(0xffffff).circle(23, -20, 5).fill(0x1a202c);
 
-    ctx.beginPath();
-    ctx.arc(72, 80, 6, 0, Math.PI * 2);
-    ctx.arc(128, 80, 6, 0, Math.PI * 2);
-    ctx.fillStyle = '#1a202c';
-    ctx.fill();
+    // Jaw / Mouth
+    p.jaw.arc(0, 15, 25, 0, Math.PI, false).fill(0xe53e3e).stroke({ width: 4, color: 0x1a202c });
+    p.jaw.moveTo(-15, 15).lineTo(-10, 25).lineTo(-5, 15).fill(0xffffff); // Teeth
+    p.jaw.moveTo(15, 15).lineTo(10, 25).lineTo(5, 15).fill(0xffffff);
+  }
 
-    // Mouth (Closed vs Open)
-    if (isOpen) {
-      // Wide open mouth with tongue
-      ctx.beginPath();
-      ctx.arc(100, 120, 24, 0, Math.PI, false);
-      ctx.fillStyle = '#e53e3e';
-      ctx.fill();
-      ctx.lineWidth = 4;
-      ctx.strokeStyle = '#1a202c';
-      ctx.stroke();
+  // Preset 2: Bunny
+  private drawBunnyPuppet(p: DynamicPuppet): void {
+    // Long Ears
+    p.leftEarWing.ellipse(-25, -70, 14, 40).fill(0x9f7aea).stroke({ width: 4, color: 0x6b46c1 });
+    p.rightEarWing.ellipse(25, -70, 14, 40).fill(0x9f7aea).stroke({ width: 4, color: 0x6b46c1 });
 
-      // Tongue
-      ctx.beginPath();
-      ctx.arc(100, 134, 12, 0, Math.PI, false);
-      ctx.fillStyle = '#feb2b2';
-      ctx.fill();
-    } else {
-      // Closed smile mouth
-      ctx.beginPath();
-      ctx.arc(100, 115, 18, 0.2, Math.PI - 0.2, false);
-      ctx.lineWidth = 5;
-      ctx.strokeStyle = '#1a202c';
-      ctx.stroke();
-    }
+    // Head
+    p.body.circle(0, 0, 60).fill(0xb794f4).stroke({ width: 5, color: 0x6b46c1 });
 
-    return Texture.from(canvas);
+    // Eyes
+    p.leftEye.circle(-22, -15, 10).fill(0xffffff).circle(-20, -15, 4).fill(0x1a202c);
+    p.rightEye.circle(22, -15, 10).fill(0xffffff).circle(20, -15, 4).fill(0x1a202c);
+
+    // Nose & Mouth
+    p.body.poly([-6, 10, 6, 10, 0, 16]).fill(0xfbb6ce);
+    p.jaw.arc(0, 18, 18, 0, Math.PI, false).fill(0xf687b3).stroke({ width: 3, color: 0x1a202c });
+  }
+
+  // Preset 3: Fox
+  private drawFoxPuppet(p: DynamicPuppet): void {
+    // Pointy Ears
+    p.leftEarWing.poly([-45, -20, -25, -75, -5, -40]).fill(0xed8936).stroke({ width: 4, color: 0xc05621 });
+    p.rightEarWing.poly([45, -20, 25, -75, 5, -40]).fill(0xed8936).stroke({ width: 4, color: 0xc05621 });
+
+    // Head
+    p.body.poly([0, 60, -65, -10, 65, -10]).fill(0xed8936).stroke({ width: 5, color: 0xc05621 });
+    p.body.poly([0, 60, -35, 10, 35, 10]).fill(0xffffff);
+
+    // Eyes
+    p.leftEye.circle(-25, -10, 9).fill(0x1a202c);
+    p.rightEye.circle(25, -10, 9).fill(0x1a202c);
+
+    // Jaw
+    p.jaw.arc(0, 25, 16, 0, Math.PI, false).fill(0xe53e3e);
+  }
+
+  // Preset 4: Robot
+  private drawRobotPuppet(p: DynamicPuppet): void {
+    // Antennas
+    p.leftEarWing.rect(-45, -60, 8, 30).fill(0xa0aec0);
+    p.leftEarWing.circle(-41, -65, 8).fill(0x3182ce);
+    p.rightEarWing.rect(37, -60, 8, 30).fill(0xa0aec0);
+    p.rightEarWing.circle(41, -65, 8).fill(0x3182ce);
+
+    // Head Box
+    p.body.roundRect(-55, -45, 110, 90, 12).fill(0xc0c9d6).stroke({ width: 5, color: 0x4a5568 });
+
+    // Visor / Eyes
+    p.leftEye.rect(-35, -25, 25, 18).fill(0x3182ce).rect(-30, -20, 8, 8).fill(0x63b3ed);
+    p.rightEye.rect(10, -25, 25, 18).fill(0x3182ce).rect(15, -20, 8, 8).fill(0x63b3ed);
+
+    // Mechanical Jaw
+    p.jaw.rect(-30, 12, 60, 20).fill(0x4a5568).stroke({ width: 3, color: 0x2d3748 });
+    p.jaw.rect(-25, 16, 50, 4).fill(0x3182ce);
+  }
+
+  // Preset 5: Cat / Tiger
+  private drawCatPuppet(p: DynamicPuppet): void {
+    // Cat Ears
+    p.leftEarWing.poly([-45, -20, -30, -65, -10, -35]).fill(0xecc94b).stroke({ width: 4, color: 0xd69e2e });
+    p.rightEarWing.poly([45, -20, 30, -65, 10, -35]).fill(0xecc94b).stroke({ width: 4, color: 0xd69e2e });
+
+    // Head
+    p.body.circle(0, 0, 60).fill(0xf6e05e).stroke({ width: 5, color: 0xd69e2e });
+
+    // Tiger Stripes
+    p.body.poly([0, -55, -10, -40, 10, -40]).fill(0x1a202c);
+    p.body.poly([-55, 0, -40, -10, -40, 10]).fill(0x1a202c);
+    p.body.poly([55, 0, 40, -10, 40, 10]).fill(0x1a202c);
+
+    // Eyes
+    p.leftEye.ellipse(-22, -15, 10, 12).fill(0x48bb78).circle(-22, -15, 4).fill(0x1a202c);
+    p.rightEye.ellipse(22, -15, 10, 12).fill(0x48bb78).circle(22, -15, 4).fill(0x1a202c);
+
+    // Whiskers
+    p.body.moveTo(-25, 10).lineTo(-60, 5);
+    p.body.moveTo(-25, 15).lineTo(-58, 20);
+    p.body.moveTo(25, 10).lineTo(60, 5);
+    p.body.moveTo(25, 15).lineTo(58, 20);
+    p.body.stroke({ width: 3, color: 0x1a202c });
+
+    // Jaw
+    p.jaw.arc(0, 18, 18, 0, Math.PI, false).fill(0xe53e3e).stroke({ width: 3, color: 0x1a202c });
   }
 }

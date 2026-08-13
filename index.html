@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Web-Based Motion Puppet Theater</title>
-    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
     <div id="app">
@@ -15,6 +15,36 @@
         <div class="control-group">
           <button id="btn-camera" class="btn btn-primary">📷 Spustit Kameru</button>
           <button id="btn-toggle-debug" class="btn btn-secondary">🔍 Debug Overlay</button>
+        </div>
+
+        <div class="control-group">
+          <label for="select-left-puppet">Loutka 1 (Levá):</label>
+          <select id="select-left-puppet" class="select-input">
+            <option value="dragon">🐲 Drak / Monstrum</option>
+            <option value="bunny">🐰 Králíček</option>
+            <option value="fox">🦊 Liška</option>
+            <option value="robot">🤖 Robot</option>
+            <option value="cat">🐱 Kočka / Tygr</option>
+          </select>
+          <label class="file-upload-btn btn-secondary">
+            🖼️ PNG
+            <input type="file" id="upload-left-closed" accept="image/*" title="Vlastní PNG obrázek" />
+          </label>
+        </div>
+
+        <div class="control-group">
+          <label for="select-right-puppet">Loutka 2 (Pravá):</label>
+          <select id="select-right-puppet" class="select-input">
+            <option value="bunny" selected>🐰 Králíček</option>
+            <option value="dragon">🐲 Drak / Monstrum</option>
+            <option value="fox">🦊 Liška</option>
+            <option value="robot">🤖 Robot</option>
+            <option value="cat">🐱 Kočka / Tygr</option>
+          </select>
+          <label class="file-upload-btn btn-secondary">
+            🖼️ PNG
+            <input type="file" id="upload-right-closed" accept="image/*" title="Vlastní PNG obrázek" />
+          </label>
         </div>
 
         <div class="control-group">
@@ -29,17 +59,6 @@
           <label class="file-upload-btn btn-secondary">
             🖼️ Vlastní Pozadí
             <input type="file" id="upload-bg" accept="image/*" />
-          </label>
-        </div>
-
-        <div class="control-group">
-          <label class="file-upload-btn btn-secondary">
-            👹 Loutka 1 (Levá)
-            <input type="file" id="upload-left-closed" accept="image/*" title="Zavřená pusa" />
-          </label>
-          <label class="file-upload-btn btn-secondary">
-            🐰 Loutka 2 (Pravá)
-            <input type="file" id="upload-right-closed" accept="image/*" title="Zavřená pusa" />
           </label>
         </div>
       </header>
@@ -60,6 +79,6 @@
       </main>
     </div>
 
-    <script type="module" src="/src/main.ts"></script>
+    <script type="module" src="./src/main.ts"></script>
   </body>
 </html>
