@@ -71,42 +71,112 @@ export function calculateAngleRadians(p1: Point2D, p2: Point2D): number {
 }
 
 /**
- * Deterministic, instant X-sorting for detected hands (Leftmost on screen -> Left Puppet, Rightmost -> Right Puppet).
- * Zero-latency, zero-stutter matching.
+ * Matches detected hands to puppet slots.
+ *
+ * Uses Spatial Proximity matching against the previous slot positions to keep
+ * physical hands bound to their puppet (no swapping / teleporting), with a
+ * deterministic X-sort fallback when no history is available yet.
  */
 export function matchDetectedHandsToPuppets(
   detectedHands: DetectedHandInput[],
-  _lastLeftPos?: Point2D,
-  _lastRightPos?: Point2D,
+  lastLeftPos?: Point2D,
+  lastRightPos?: Point2D,
   canvasWidth: number = 1000,
-  _canvasHeight: number = 800
+  canvasHeight: number = 800
 ): MatchedHandOutput[] {
   if (detectedHands.length === 0) return [];
 
-  // Convert raw palm centers to mirrored screen X pixels
-  const handPixels = detectedHands.map((dh) => {
+  // Convert raw palm centers to mirrored screen coordinates
+  const hands = detectedHands.map((dh) => {
     const palm = dh.landmarks[9] || dh.landmarks[0] || { x: 0.5, y: 0.5, z: 0 };
     return {
       screenX: (1.0 - palm.x) * canvasWidth,
-      mediaPipeLabel: dh.mediaPipeLabel,
+      screenY: palm.y * canvasHeight,
       landmarks: dh.landmarks,
     };
   });
 
-  if (handPixels.length === 1) {
-    const h = handPixels[0];
-    // Assign slot based on screen side (left half vs right half)
+  // ---- Single detected hand ----
+  if (hands.length === 1) {
+    const h = hands[0];
+
+    // Prefer continuity with whichever slot still holds history.
+    if (lastLeftPos && !lastRightPos) {
+      return [{ puppetSlot: 'Left', landmarks: h.landmarks }];
+    }
+    if (lastRightPos && !lastLeftPos) {
+      return [{ puppetSlot: 'Right', landmarks: h.landmarks }];
+    }
+    if (lastLeftPos && lastRightPos) {
+      const dLeft = distanceToPoint(h, lastLeftPos);
+      const dRight = distanceToPoint(h, lastRightPos);
+      return [{ puppetSlot: dLeft <= dRight ? 'Left' : 'Right', landmarks: h.landmarks }];
+    }
+
+    // No history: assign by screen half
     const slot: 'Left' | 'Right' = h.screenX < canvasWidth * 0.5 ? 'Left' : 'Right';
     return [{ puppetSlot: slot, landmarks: h.landmarks }];
   }
 
-  // Sort hands by screen X (ascending)
-  handPixels.sort((a, b) => a.screenX - b.screenX);
+  // ---- Two detected hands ----
+  const [h0, h1] = hands;
 
+  if (lastLeftPos && lastRightPos) {
+    const d0L = distanceToPoint(h0, lastLeftPos);
+    const d0R = distanceToPoint(h0, lastRightPos);
+    const d1L = distanceToPoint(h1, lastLeftPos);
+    const d1R = distanceToPoint(h1, lastRightPos);
+
+    // Greedy assignment minimizing total travel from previous positions.
+    const assignmentA = d0L + d1R; // h0->Left, h1->Right
+    const assignmentB = d0R + d1L; // h0->Right, h1->Left
+
+    if (assignmentA <= assignmentB) {
+      return [
+        { puppetSlot: 'Left', landmarks: h0.landmarks },
+        { puppetSlot: 'Right', landmarks: h1.landmarks },
+      ];
+    }
+    return [
+      { puppetSlot: 'Right', landmarks: h0.landmarks },
+      { puppetSlot: 'Left', landmarks: h1.landmarks },
+    ];
+  }
+
+  // Partial history: anchor the tracked slot to its nearest hand.
+  if (lastLeftPos) {
+    const d0 = distanceToPoint(h0, lastLeftPos);
+    const d1 = distanceToPoint(h1, lastLeftPos);
+    const leftHand = d0 <= d1 ? h0 : h1;
+    const rightHand = leftHand === h0 ? h1 : h0;
+    return [
+      { puppetSlot: 'Left', landmarks: leftHand.landmarks },
+      { puppetSlot: 'Right', landmarks: rightHand.landmarks },
+    ];
+  }
+  if (lastRightPos) {
+    const d0 = distanceToPoint(h0, lastRightPos);
+    const d1 = distanceToPoint(h1, lastRightPos);
+    const rightHand = d0 <= d1 ? h0 : h1;
+    const leftHand = rightHand === h0 ? h1 : h0;
+    return [
+      { puppetSlot: 'Left', landmarks: leftHand.landmarks },
+      { puppetSlot: 'Right', landmarks: rightHand.landmarks },
+    ];
+  }
+
+  // No history: deterministic X-sort (leftmost on screen -> Left puppet)
+  const sorted = [h0, h1].sort((a, b) => a.screenX - b.screenX);
   return [
-    { puppetSlot: 'Left', landmarks: handPixels[0].landmarks },
-    { puppetSlot: 'Right', landmarks: handPixels[1].landmarks },
+    { puppetSlot: 'Left', landmarks: sorted[0].landmarks },
+    { puppetSlot: 'Right', landmarks: sorted[1].landmarks },
   ];
+}
+
+function distanceToPoint(h: { screenX: number; screenY: number }, p: Point2D): number {
+  const dx = h.screenX - p.x;
+  const dy = h.screenY - p.y;
+  return Math.sqrt(dx * dx + dy * dy);
 }
 
 /**
