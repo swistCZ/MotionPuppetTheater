@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="cs">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Builder loutek — Motion Puppet Theater</title>
+    <style>
+      :root {
+        --bg: #0d1117;
+        --bg-elev: #161b22;
+        --panel: #1c2333;
+        --panel-2: #20293c;
+        --border: #30363d;
+        --border-strong: #444c56;
+        --text: #e6edf3;
+        --muted: #8b949e;
+        --accent: #58a6ff;
+        --accent-dim: rgba(88, 166, 255, 0.14);
+        --green: #3fb950;
+        --red: #f85149;
+        --amber: #d29922;
+        --radius: 8px;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; }
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font: 14px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      a { color: var(--accent); text-decoration: none; }
+      a:hover { text-decoration: underline; }
+
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        padding: 12px 22px;
+        background: var(--bg-elev);
+        border-bottom: 1px solid var(--border);
+      }
+      header h1 { font-size: 16px; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
+      header .back { font-size: 13px; color: var(--muted); }
+      header .back:hover { color: var(--accent); text-decoration: none; }
+
+      .layout { display: grid; grid-template-columns: 380px minmax(0, 1fr); gap: 16px; padding: 16px 22px; }
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 16px;
+      }
+      .panel + .panel { margin-top: 16px; }
+      h2 {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--accent);
+        margin: 0 0 10px;
+      }
+      .step { font-size: 12.5px; color: var(--muted); margin: 0 0 12px; }
+      .step b { color: var(--text); font-weight: 600; }
+      .warn { color: var(--amber); font-size: 12px; margin-top: 10px; white-space: pre-wrap; }
+      .info { font-size: 12px; color: var(--muted); margin-top: 12px; line-height: 1.5; }
+      .info code { background: var(--bg-elev); border: 1px solid var(--border); border-radius: 4px; padding: 1px 4px; font-size: 11px; }
+
+      /* --- dropzones --- */
+      .parts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+      .dropzone {
+        display: flex;
+        flex-direction: column;
+        border: 1.5px dashed var(--border-strong);
+        border-radius: 10px;
+        background: var(--bg-elev);
+        overflow: hidden;
+        transition: border-color 0.15s;
+      }
+      .dropzone:hover { border-color: var(--accent); }
+      .dropzone.ready { border-color: var(--green); border-style: solid; }
+      .dz-main {
+        display: block;
+        flex: 1;
+        padding: 12px;
+        cursor: pointer;
+        text-align: center;
+      }
+      .dz-main:hover .dz-label { color: var(--accent); }
+      .dz-main input { display: none; }
+      .dz-label { font-weight: 600; font-size: 13px; display: block; }
+      .dz-sub { font-size: 11.5px; color: var(--muted); display: block; margin-top: 2px; min-height: 16px; }
+      .dz-note { font-size: 11px; color: var(--muted); display: block; margin-top: 4px; }
+      .dz-thumb { display: block; margin-top: 8px; min-height: 0; }
+      .dz-thumb img {
+        max-height: 74px;
+        max-width: 100%;
+        display: block;
+        margin: 0 auto;
+        background: repeating-conic-gradient(#14171c 0% 25%, #1b2028 0% 50%) 0 0 / 12px 12px;
+        border-radius: 6px;
+      }
+      .dz-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-top: auto;
+        padding: 6px 12px;
+        border-top: 1px solid var(--border);
+        background: rgba(0, 0, 0, 0.18);
+      }
+      .dz-footer .tag { font-size: 11px; color: var(--muted); }
+
+      /* --- switch --- */
+      .switch { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; user-select: none; }
+      .switch input { position: absolute; opacity: 0; pointer-events: none; }
+      .switch .track {
+        width: 32px; height: 18px; border-radius: 9px;
+        background: var(--border-strong);
+        position: relative;
+        transition: background 0.15s;
+        flex-shrink: 0;
+      }
+      .switch .track::after {
+        content: "";
+        position: absolute;
+        top: 2px; left: 2px;
+        width: 14px; height: 14px;
+        border-radius: 50%;
+        background: var(--text);
+        transition: left 0.15s;
+      }
+      .switch input:checked + .track { background: var(--accent); }
+      .switch input:checked + .track::after { left: 16px; }
+      .switch .switch-label { font-size: 12px; color: var(--muted); }
+      .switch input:checked ~ .switch-label { color: var(--text); }
+
+      /* --- forms --- */
+      .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+      .row.tight { gap: 8px; }
+      label.field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; font-size: 12px; color: var(--muted); }
+      label.field:last-child { margin-bottom: 0; }
+      input[type="text"], input[type="number"], input[type="search"] {
+        height: 34px;
+        padding: 6px 10px;
+        font-size: 13px;
+        font-family: inherit;
+        color: var(--text);
+        background: var(--bg-elev);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        outline: none;
+        transition: border-color 0.15s, box-shadow 0.15s;
+        width: 100%;
+      }
+      input:focus {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px var(--accent-dim);
+      }
+      input[type="checkbox"] { accent-color: var(--accent); }
+
+      /* --- joints / mode chips --- */
+      .joint-group { margin-bottom: 10px; }
+      .joint-group:last-child { margin-bottom: 0; }
+      .joint-label { display: block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 6px; }
+      .modebar { display: grid; gap: 6px; }
+      .modebar.cols-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+      .modebar.cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .modebar button {
+        height: 26px;
+        padding: 0 4px;
+        border: 1px solid var(--border);
+        background: var(--bg-elev);
+        color: var(--text);
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 11.5px;
+        font-family: inherit;
+        text-align: center;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        transition: background 0.12s, border-color 0.12s, color 0.12s;
+      }
+      .modebar button:hover { border-color: var(--border-strong); }
+      .modebar button.active { background: var(--accent); border-color: var(--accent); color: #0b1119; font-weight: 700; }
+
+      /* --- previews --- */
+      .previews { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px; align-items: start; }
+      canvas.preview {
+        width: 100%;
+        display: block;
+        background: repeating-conic-gradient(#14171c 0% 25%, #1b2028 0% 50%) 0 0 / 16px 16px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+      }
+      canvas.preview { max-width: none; }
+      .hint { font-size: 12px; color: var(--muted); margin: 8px 0 0; }
+      .coord-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+      .field-row {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .field-row input.num { width: 64px; flex: 0 0 64px; text-align: right; }
+      .rest-wrap {
+        margin-top: 14px;
+        padding-top: 12px;
+        border-top: 1px solid var(--border);
+      }
+      .rest-wrap .joint-label { margin-bottom: 8px; }
+      .rest-wrap .row { margin-top: 0; }
+
+      /* --- buttons --- */
+      .btn-row { display: flex; gap: 8px; margin-top: 4px; }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        height: 34px;
+        padding: 0 14px;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+        font-size: 13px;
+        font-weight: 600;
+        font-family: inherit;
+        cursor: pointer;
+        transition: background 0.12s, border-color 0.12s, box-shadow 0.12s;
+        white-space: nowrap;
+      }
+      .btn:active { transform: translateY(1px); }
+      .btn-primary { background: var(--accent); border-color: var(--accent); color: #0b1119; }
+      .btn-primary:hover { background: #79c0ff; box-shadow: 0 0 0 3px var(--accent-dim); }
+      .btn-success { background: var(--green); border-color: var(--green); color: #04150a; }
+      .btn-success:hover { box-shadow: 0 0 0 3px rgba(63, 185, 80, 0.16); }
+      .btn-secondary { background: rgba(255, 255, 255, 0.06); color: var(--text); }
+      .btn-secondary:hover { background: rgba(255, 255, 255, 0.12); border-color: var(--border-strong); }
+      .btn.full { flex: 1; }
+
+      /* --- json --- */
+      textarea {
+        width: 100%;
+        height: 170px;
+        font: 11.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        background: var(--bg-elev);
+        color: #a5d6a7;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 10px;
+        resize: vertical;
+        outline: none;
+      }
+      textarea:focus { border-color: var(--accent); }
+
+      .fullwidth { grid-column: 1 / -1; }
+
+      @media (max-width: 1080px) {
+        .layout { grid-template-columns: 1fr; }
+        .previews { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Builder loutek</h1>
+      <a class="back" href="/">← Zpět na divadlo</a>
+    </header>
+
+    <div class="layout">
+      <!-- LEFT: controls -->
+      <div>
+        <div class="panel">
+          <h2>1 · Díly loutky</h2>
+          <p class="step">
+            Připrav si každý díl jako zvláštní obrázek s průhledným pozadím (PNG).
+            U každého dílu vyber, jestli má být <b>pohyblivá</b> (animovaná podle rukou)
+            nebo <b>statická</b> (jen umístěná v klidové poloze).
+          </p>
+          <div class="parts-grid">
+            <div class="dropzone" id="dz-body">
+              <label class="dz-main">
+                <span class="dz-label">Tělo</span>
+                <span class="dz-sub">Trup, hlava i kyčle — bez paží</span>
+                <span class="dz-thumb"></span>
+                <input type="file" id="file-body" accept="image/png,image/jpeg,image/svg+xml,image/webp" />
+              </label>
+              <div class="dz-footer">
+                <span class="tag">Vždy sleduje dlaň</span>
+              </div>
+            </div>
+
+            <div class="dropzone" id="dz-head">
+              <label class="dz-main">
+                <span class="dz-label">Hlava</span>
+                <span class="dz-sub">Samostatná hlava (volitelné)</span>
+                <span class="dz-thumb"></span>
+                <input type="file" id="file-head" accept="image/png,image/jpeg,image/svg+xml,image/webp" />
+              </label>
+              <div class="dz-footer">
+                <span class="tag">Statická</span>
+                <label class="switch">
+                  <input type="checkbox" id="mv-head" checked />
+                  <span class="track"></span>
+                  <span class="switch-label">Pohyblivá</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="dropzone" id="dz-leftArm">
+              <label class="dz-main">
+                <span class="dz-label">Levá paže</span>
+                <span class="dz-sub">Samostatná paže</span>
+                <span class="dz-thumb"></span>
+                <input type="file" id="file-leftArm" accept="image/png,image/jpeg,image/svg+xml,image/webp" />
+              </label>
+              <div class="dz-footer">
+                <span class="tag">Statická</span>
+                <label class="switch">
+                  <input type="checkbox" id="mv-leftArm" checked />
+                  <span class="track"></span>
+                  <span class="switch-label">Pohyblivá</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="dropzone" id="dz-rightArm">
+              <label class="dz-main">
+                <span class="dz-label">Pravá paže</span>
+                <span class="dz-sub">Samostatná paže</span>
+                <span class="dz-thumb"></span>
+                <input type="file" id="file-rightArm" accept="image/png,image/jpeg,image/svg+xml,image/webp" />
+              </label>
+              <div class="dz-footer">
+                <span class="tag">Statická</span>
+                <label class="switch">
+                  <input type="checkbox" id="mv-rightArm" checked />
+                  <span class="track"></span>
+                  <span class="switch-label">Pohyblivá</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="dropzone" id="dz-leftLeg">
+              <label class="dz-main">
+                <span class="dz-label">Levá noha</span>
+                <span class="dz-sub">Samostatná noha (volitelné)</span>
+                <span class="dz-thumb"></span>
+                <input type="file" id="file-leftLeg" accept="image/png,image/jpeg,image/svg+xml,image/webp" />
+              </label>
+              <div class="dz-footer">
+                <span class="tag">Statická</span>
+                <label class="switch">
+                  <input type="checkbox" id="mv-leftLeg" checked />
+                  <span class="track"></span>
+                  <span class="switch-label">Pohyblivá</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="dropzone" id="dz-rightLeg">
+              <label class="dz-main">
+                <span class="dz-label">Pravá noha</span>
+                <span class="dz-sub">Samostatná noha (volitelné)</span>
+                <span class="dz-thumb"></span>
+                <input type="file" id="file-rightLeg" accept="image/png,image/jpeg,image/svg+xml,image/webp" />
+              </label>
+              <div class="dz-footer">
+                <span class="tag">Statická</span>
+                <label class="switch">
+                  <input type="checkbox" id="mv-rightLeg" checked />
+                  <span class="track"></span>
+                  <span class="switch-label">Pohyblivá</span>
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>2 · Identita</h2>
+          <div class="row">
+            <label class="field">Jméno postavy <input type="text" id="cfg-name" value="Moje postava" /></label>
+            <label class="field">id (bez mezer, latinou) <input type="text" id="cfg-id" value="postava" /></label>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>3 · Pohyb a měřítko</h2>
+          <div class="row">
+            <label class="field">Měřítko loutky <input type="number" id="cfg-scale" step="0.05" value="1" /></label>
+            <label class="field">Rozsah švihu (rad) <input type="number" id="cfg-delta" step="0.1" value="2.6" /></label>
+          </div>
+          <div class="row" style="margin-top:10px">
+            <label class="switch">
+              <input type="checkbox" id="cfg-swing" />
+              <span class="track"></span>
+              <span class="switch-label">Náhledové houpání</span>
+            </label>
+            <label class="switch">
+              <input type="checkbox" id="cfg-clean" />
+              <span class="track"></span>
+              <span class="switch-label">Odstranit pozadí</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>4 · Uložit a sdílet</h2>
+          <div class="btn-row">
+            <button class="btn btn-secondary" id="btn-import">Import JSON</button>
+            <button class="btn btn-success full" id="btn-save">Uložit do prohlížeče</button>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-primary full" id="btn-export">Stáhnout config.json</button>
+          </div>
+          <input type="file" id="file-import" accept="application/json,.json" style="display:none" />
+          <div class="warn" id="export-warn"></div>
+          <p class="info">
+            <b>Uložit do prohlížeče</b> přidá postavu do seznamu na hlavní stránce okamžitě —
+            funguje i na online webu, ale jen v tomto prohlížeči. <b>Stáhnout config.json</b>
+            slouží k zálohě a sdílení; majitel webu jím doplní sdílený seznam pro všechny
+            návštěvníky (složka <code>public/characters/&lt;id&gt;/</code>, seznam se generuje sám).
+            Postavu lze kdykoliv načíst zpět přes <b>Import JSON</b> a dál upravovat.
+          </p>
+        </div>
+      </div>
+
+      <!-- RIGHT: previews -->
+      <div class="previews">
+        <div class="panel">
+          <h2>Sestava</h2>
+          <canvas id="main-preview" class="preview" width="620" height="540"></canvas>
+          <p class="hint">Přehled sestavy s klidovými úhly. Zapni „Náhledové houpání" vlevo pro ukázku animace.</p>
+        </div>
+        <div class="panel">
+          <h2>Klouby a úhly</h2>
+          <p class="step">Zvol bod a klikni do obrázku dílu pro přesné umístění.</p>
+          <div class="joint-group">
+            <span class="joint-label">Tělo</span>
+            <div class="modebar cols-5">
+              <button data-mode="shoulderL" class="active">Rameno L</button>
+              <button data-mode="shoulderR">Rameno P</button>
+              <button data-mode="neck">Krk</button>
+              <button data-mode="hipL">Kyčel L</button>
+              <button data-mode="hipR">Kyčel P</button>
+            </div>
+          </div>
+          <div class="joint-group">
+            <span class="joint-label">Paže</span>
+            <div class="modebar cols-2">
+              <button data-mode="pivotL">Pivot L</button>
+              <button data-mode="pivotR">Pivot P</button>
+            </div>
+          </div>
+          <div class="joint-group">
+            <span class="joint-label">Nohy</span>
+            <div class="modebar cols-2">
+              <button data-mode="legPivotL">Pivot L</button>
+              <button data-mode="legPivotR">Pivot P</button>
+            </div>
+          </div>
+
+          <h2 style="margin:16px 0 10px">Umístění bodu</h2>
+          <canvas id="part-preview" class="preview" width="340" height="300"></canvas>
+          <div class="coord-row">
+            <label class="field-row">x <input type="number" id="pt-x" class="num" step="1" /></label>
+            <label class="field-row">y <input type="number" id="pt-y" class="num" step="1" /></label>
+          </div>
+          <p class="hint">Klikni do obrázku pro umístění zvoleného bodu.</p>
+
+          <div class="rest-wrap">
+            <span class="joint-label">Klidové úhly (°)</span>
+            <div class="row">
+              <label class="field-row">Paže L <input type="number" id="cfg-restL" class="num" step="1" value="90" /></label>
+              <label class="field-row">Paže P <input type="number" id="cfg-restR" class="num" step="1" value="90" /></label>
+              <label class="field-row">Noha L <input type="number" id="cfg-restLegL" class="num" step="1" value="0" /></label>
+              <label class="field-row">Noha P <input type="number" id="cfg-restLegR" class="num" step="1" value="0" /></label>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="layout" style="padding-top:0">
+      <div class="panel fullwidth">
+        <h2>Náhled config.json</h2>
+        <textarea id="json-out" readonly></textarea>
+      </div>
+    </div>
+
+    <script type="module" src="./src/builder.ts"></script>
+  </body>
+</html>

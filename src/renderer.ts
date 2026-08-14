@@ -1,7 +1,16 @@
 import { Application, Container, Sprite, Graphics, Assets, Texture, Text, TextStyle } from 'pixi.js';
 import { HandState } from './gestures';
+import { CutoutRigConfig, armRotation } from './rig';
+import { RigRenderParts, buildRigParts, fetchRigConfig, loadLocalCharacterConfig } from './rigAssets';
 
-export type PuppetPreset = 'dragon' | 'bunny' | 'fox' | 'robot' | 'cat' | 'custom';
+export type PuppetPreset = 'dragon' | 'bunny' | 'fox' | 'robot' | 'cat' | 'custom' | `rig:${string}`;
+
+interface RigPuppetState {
+  config: CutoutRigConfig;
+  parts: RigRenderParts;
+  scale: number;
+  maxArmDelta: number;
+}
 
 interface DynamicPuppet {
   container: Container;
@@ -18,6 +27,7 @@ interface DynamicPuppet {
   preset: PuppetPreset;
   customSpriteClosed?: Sprite;
   customSpriteOpen?: Sprite;
+  rig?: RigPuppetState;
 }
 
 export class PuppetRenderer {
@@ -107,8 +117,8 @@ export class PuppetRenderer {
     this.rightPuppet.container.position.set(-300, -300);
 
     // Build default character presets
-    this.buildPuppetPreset('Left', 'dragon');
-    this.buildPuppetPreset('Right', 'bunny');
+    await this.buildPuppetPreset('Left', 'dragon');
+    await this.buildPuppetPreset('Right', 'bunny');
   }
 
   public resize(width: number, height: number): void {
@@ -228,6 +238,56 @@ export class PuppetRenderer {
     // Smooth position update for Torso center
     puppet.container.position.set(state.smoothedPosition.x, state.smoothedPosition.y);
 
+    // Cut-out rig: move body with the palm, swing movable parts around their joints.
+    if (puppet.rig) {
+      const { config, parts, maxArmDelta } = puppet.rig;
+      const bw = parts.bodySprite.texture.width;
+      const bh = parts.bodySprite.texture.height;
+
+      const shoulderL = config.body.shoulderL;
+      const shoulderR = config.body.shoulderR;
+      parts.leftArmContainer.position.set(shoulderL.x - bw / 2, shoulderL.y - bh / 2);
+      parts.rightArmContainer.position.set(shoulderR.x - bw / 2, shoulderR.y - bh / 2);
+
+      const restL = config.leftArm.restHandAngle;
+      const restR = config.rightArm.restHandAngle;
+      const armRotL = armRotation(state.limbs.leftArm, restL, maxArmDelta);
+      const armRotR = armRotation(state.limbs.rightArm, restR, maxArmDelta);
+      const deltaL = armRotL - restL;
+      const deltaR = armRotR - restR;
+
+      if (config.parts.leftArm.movable) parts.leftArmSprite.rotation = armRotL;
+      if (config.parts.rightArm.movable) parts.rightArmSprite.rotation = armRotR;
+
+      // Legs swing opposite to the same-side arm for a walking look.
+      if (parts.leftLegContainer && config.leftLeg && parts.leftLegSprite) {
+        const hipL = config.body.hipL ?? { x: bw * 0.38, y: bh * 0.85 };
+        parts.leftLegContainer.position.set(hipL.x - bw / 2, hipL.y - bh / 2);
+        if (config.parts.leftLeg?.movable) {
+          parts.leftLegSprite.rotation = config.leftLeg.restAngle - 0.5 * deltaL;
+        }
+      }
+      if (parts.rightLegContainer && config.rightLeg && parts.rightLegSprite) {
+        const hipR = config.body.hipR ?? { x: bw * 0.62, y: bh * 0.85 };
+        parts.rightLegContainer.position.set(hipR.x - bw / 2, hipR.y - bh / 2);
+        if (config.parts.rightLeg?.movable) {
+          parts.rightLegSprite.rotation = config.rightLeg.restAngle - 0.5 * deltaR;
+        }
+      }
+
+      // Head bobs with the average arm swing when movable.
+      if (parts.headContainer && parts.headSprite && config.parts.head) {
+        const neck = config.body.neck ?? { x: bw * 0.5, y: bh * 0.2 };
+        parts.headContainer.position.set(neck.x - bw / 2, neck.y - bh / 2);
+        if (config.parts.head.movable) {
+          const avgDelta = (deltaL + deltaR) / 2;
+          const bob = (config.head?.bob ?? 1) * 0.03 * parts.headSprite.texture.height;
+          parts.headContainer.position.y -= bob * avgDelta;
+        }
+      }
+      return;
+    }
+
     if (puppet.preset === 'custom' && puppet.customSpriteClosed && puppet.customSpriteOpen) {
       puppet.customSpriteClosed.visible = state.isPinching;
       puppet.customSpriteOpen.visible = !state.isPinching;
@@ -302,6 +362,7 @@ export class PuppetRenderer {
       const isLeft = handType === 'Left';
       const puppet = isLeft ? this.leftPuppet : this.rightPuppet;
       puppet.preset = 'custom';
+      puppet.rig = undefined;
 
       puppet.container.removeChildren();
 
@@ -326,12 +387,34 @@ export class PuppetRenderer {
     }
   }
 
-  public buildPuppetPreset(handType: 'Left' | 'Right', preset: PuppetPreset): void {
+  public async buildPuppetPreset(
+    handType: 'Left' | 'Right',
+    preset: PuppetPreset,
+    rigConfigOverride?: CutoutRigConfig
+  ): Promise<void> {
     const isLeft = handType === 'Left';
     const puppet = isLeft ? this.leftPuppet : this.rightPuppet;
     puppet.preset = preset;
 
     puppet.container.removeChildren();
+
+    // Cut-out rig presets (historical characters) are loaded asynchronously.
+    if (preset.startsWith('rig:')) {
+      if (preset.startsWith('rig:local:')) {
+        const localId = preset.slice('rig:local:'.length);
+        const config = loadLocalCharacterConfig(localId);
+        if (config) {
+          await this.buildRigPuppet(puppet, localId, config);
+        } else {
+          console.warn(`Local rig "${localId}" not found; falling back to default puppet.`);
+        }
+      } else {
+        await this.buildRigPuppet(puppet, preset.slice(4), rigConfigOverride);
+      }
+      return;
+    }
+
+    puppet.rig = undefined;
 
     puppet.torso.clear();
     puppet.headGraphic.clear();
@@ -379,6 +462,37 @@ export class PuppetRenderer {
     puppet.headContainer.addChild(puppet.rightEye);
 
     puppet.container.addChild(puppet.headContainer);
+  }
+
+  /**
+   * Builds a sprite-based cut-out puppet from a rig config.
+   * Hierarchy: puppet.container -> rigRoot (scaled) -> body + legs + head + arms.
+   */
+  private async buildRigPuppet(puppet: DynamicPuppet, id: string, overrideConfig?: CutoutRigConfig): Promise<void> {
+    try {
+      const config = overrideConfig ?? (await fetchRigConfig(id));
+      const parts = await buildRigParts(config);
+
+      const rigRoot = new Container();
+      rigRoot.scale.set(config.displayScale);
+      rigRoot.addChild(parts.bodySprite);
+      if (parts.leftLegContainer) rigRoot.addChild(parts.leftLegContainer);
+      if (parts.rightLegContainer) rigRoot.addChild(parts.rightLegContainer);
+      if (parts.headContainer) rigRoot.addChild(parts.headContainer);
+      rigRoot.addChild(parts.leftArmContainer);
+      rigRoot.addChild(parts.rightArmContainer);
+      puppet.container.addChild(rigRoot);
+
+      puppet.rig = {
+        config,
+        parts,
+        scale: config.displayScale,
+        maxArmDelta: config.maxArmDelta ?? 2.6,
+      };
+    } catch (err) {
+      console.error(`Failed to build rig "${id}":`, err);
+      puppet.rig = undefined;
+    }
   }
 
   private drawDefaultBackground(colorHex: number): void {

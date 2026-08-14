@@ -3,38 +3,40 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Motion Puppet Theater Pro</title>
+    <title>Puppet Theater — Motion Puppet Theater</title>
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
     <div id="app">
-      <!-- Glassmorphism Pro Control Bar -->
+      <!-- Control Bar -->
       <header class="control-panel">
         <div class="brand">
-          <h1 class="title">🎭 Puppet Theater Pro</h1>
-          <span id="fps-badge" class="fps-badge">⚡ -- FPS</span>
-          <span id="rec-badge" class="rec-badge hidden">🔴 REC 00:00</span>
+          <h1 class="title">Puppet Theater</h1>
+          <span id="fps-badge" class="fps-badge">-- FPS</span>
+          <span id="rec-badge" class="rec-badge hidden">REC 00:00</span>
         </div>
-        
+
         <div class="control-group">
-          <button id="btn-camera" class="btn btn-primary" title="Spustit/Zastavit kameru">📷 Kamera</button>
-          <button id="btn-record" class="btn btn-danger" title="Zapnout/zastavit nahrávání videa plátna do souboru">🔴 Nahrávat</button>
-          <button id="btn-toggle-debug" class="btn btn-secondary" title="Ukázat/skrýt detekční kostru">🔍 Debug</button>
-          <button id="btn-toggle-freeze" class="btn btn-secondary" title="Zamknout/odemknout pohyb loutek">🔓 Pohyb</button>
-          <button id="btn-toggle-theremin" class="btn btn-secondary" title="Zapnout/vypnout Theremin zvuk">🎵 Theremin</button>
+          <button id="btn-camera" class="btn btn-primary" title="Spustit/zastavit kameru">Kamera</button>
+          <button id="btn-record" class="btn btn-danger" title="Zapnout/zastavit nahrávání videa plátna do souboru">Nahrávat</button>
+          <button id="btn-toggle-debug" class="btn btn-secondary" title="Ukázat/skrýt detekční kostru">Debug</button>
+          <button id="btn-toggle-freeze" class="btn btn-secondary" title="Zamknout/odemknout pohyb loutek">Pohyb</button>
+          <button id="btn-toggle-theremin" class="btn btn-secondary" title="Zapnout/vypnout Theremin zvuk">Theremin</button>
+          <button id="btn-sim" class="btn btn-secondary" title="Simulace rukou bez kamery (tělo = myš, paže = animace)">Simulace</button>
+          <a href="/builder.html" class="btn btn-secondary" title="Sestavit vlastní vystřihovánkovou loutku">Builder</a>
         </div>
 
         <div class="control-group">
           <label for="select-left-puppet" class="compact-label">L1:</label>
           <select id="select-left-puppet" class="select-input">
-            <option value="dragon">🐲 Drak</option>
-            <option value="bunny">🐰 Králík</option>
-            <option value="fox">🦊 Liška</option>
-            <option value="robot">🤖 Robot</option>
-            <option value="cat">🐱 Kočka</option>
+            <option value="dragon">Drak</option>
+            <option value="bunny">Králík</option>
+            <option value="fox">Liška</option>
+            <option value="robot">Robot</option>
+            <option value="cat">Kočka</option>
           </select>
           <label class="file-upload-btn btn-secondary" title="Nahrát vlastní PNG loutku">
-            🖼️
+            PNG
             <input type="file" id="upload-left-closed" accept="image/*" />
           </label>
         </div>
@@ -42,14 +44,14 @@
         <div class="control-group">
           <label for="select-right-puppet" class="compact-label">L2:</label>
           <select id="select-right-puppet" class="select-input">
-            <option value="bunny" selected>🐰 Králík</option>
-            <option value="dragon">🐲 Drak</option>
-            <option value="fox">🦊 Liška</option>
-            <option value="robot">🤖 Robot</option>
-            <option value="cat">🐱 Kočka</option>
+            <option value="bunny" selected>Králík</option>
+            <option value="dragon">Drak</option>
+            <option value="fox">Liška</option>
+            <option value="robot">Robot</option>
+            <option value="cat">Kočka</option>
           </select>
           <label class="file-upload-btn btn-secondary" title="Nahrát vlastní PNG loutku">
-            🖼️
+            PNG
             <input type="file" id="upload-right-closed" accept="image/*" />
           </label>
         </div>
@@ -64,7 +66,7 @@
             <option value="0x2f855a">Zelená</option>
           </select>
           <label class="file-upload-btn btn-secondary" title="Nahrát vlastní obrázek pozadí">
-            🖼️ Pozadí
+            Pozadí
             <input type="file" id="upload-bg" accept="image/*" />
           </label>
         </div>

@@ -1,0 +1,20 @@
+{
+  "id": "snek",
+  "name": "Šnek",
+  "displayScale": 0.9,
+  "maxArmDelta": 2.6,
+  "parts": {
+    "body": { "src": "characters/snek/body.svg" },
+    "head": { "src": "characters/snek/head.svg", "movable": true },
+    "leftArm": { "src": "characters/snek/left_arm.svg", "movable": true },
+    "rightArm": { "src": "characters/snek/right_arm.svg", "movable": true }
+  },
+  "body": {
+    "shoulderL": { "x": 66, "y": 150 },
+    "shoulderR": { "x": 234, "y": 150 },
+    "neck": { "x": 230, "y": 292 }
+  },
+  "leftArm": { "pivot": { "x": 30, "y": 24 }, "restHandAngle": 1.571 },
+  "rightArm": { "pivot": { "x": 30, "y": 24 }, "restHandAngle": 1.571 },
+  "head": { "bob": 1 }
+}

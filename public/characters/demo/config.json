@@ -1,0 +1,26 @@
+{
+  "id": "demo",
+  "name": "Demo figurka",
+  "displayScale": 0.75,
+  "maxArmDelta": 2.6,
+  "parts": {
+    "body": { "src": "characters/demo/body.svg" },
+    "head": { "src": "characters/demo/head.svg", "movable": true },
+    "leftArm": { "src": "characters/demo/left_arm.svg", "movable": true },
+    "rightArm": { "src": "characters/demo/right_arm.svg", "movable": true },
+    "leftLeg": { "src": "characters/demo/left_leg.svg", "movable": true },
+    "rightLeg": { "src": "characters/demo/right_leg.svg", "movable": true }
+  },
+  "body": {
+    "shoulderL": { "x": 130, "y": 120 },
+    "shoulderR": { "x": 170, "y": 120 },
+    "neck": { "x": 150, "y": 88 },
+    "hipL": { "x": 126, "y": 258 },
+    "hipR": { "x": 174, "y": 258 }
+  },
+  "leftArm": { "pivot": { "x": 30, "y": 24 }, "restHandAngle": 1.666 },
+  "rightArm": { "pivot": { "x": 30, "y": 24 }, "restHandAngle": 1.476 },
+  "leftLeg": { "pivot": { "x": 22, "y": 8 }, "restAngle": 0 },
+  "rightLeg": { "pivot": { "x": 22, "y": 8 }, "restAngle": 0 },
+  "head": { "bob": 1 }
+}

@@ -9,6 +9,13 @@ import {
 import { PuppetRenderer, PuppetPreset } from './renderer';
 import { ThereminSynth } from './theremin';
 import { StageRecorder } from './recorder';
+import { HandSimulator } from './simulator';
+import {
+  fetchRigConfig,
+  fetchRigIdList,
+  listLocalCharacterIds,
+  loadLocalCharacterConfig,
+} from './rigAssets';
 import { Results, HAND_CONNECTIONS } from '@mediapipe/hands';
 import { drawConnectors, drawLandmarks } from '@mediapipe/drawing_utils';
 
@@ -17,6 +24,7 @@ class AppManager {
   private renderer: PuppetRenderer;
   private theremin: ThereminSynth;
   private recorder: StageRecorder;
+  private simulator: HandSimulator;
 
   private videoElement: HTMLVideoElement;
   private debugCanvas: HTMLCanvasElement;
@@ -55,6 +63,7 @@ class AppManager {
     this.renderer = new PuppetRenderer(width, height);
     this.theremin = new ThereminSynth();
     this.recorder = new StageRecorder();
+    this.simulator = new HandSimulator(this.renderer);
 
     this.init(stageContainer);
   }
@@ -66,7 +75,100 @@ class AppManager {
     window.addEventListener('resize', () => this.onWindowResize());
 
     this.setupUIControls();
+    await this.populateRigCharacters();
     this.startDisplayLoop();
+  }
+
+  /**
+   * Populates the left/right puppet selects with cut-out rig characters
+   * listed in public/characters/index.json.
+   */
+  private async populateRigCharacters(): Promise<void> {
+    try {
+      const selectLeft = document.getElementById('select-left-puppet') as HTMLSelectElement;
+      const selectRight = document.getElementById('select-right-puppet') as HTMLSelectElement;
+
+      const groupL = document.createElement('optgroup');
+      groupL.label = 'Historičtí';
+      const groupR = document.createElement('optgroup');
+      groupR.label = 'Historičtí';
+      const groupLocalL = document.createElement('optgroup');
+      groupLocalL.label = 'Uložené v prohlížeči';
+      const groupLocalR = document.createElement('optgroup');
+      groupLocalR.label = 'Uložené v prohlížeči';
+
+      const add = (value: string, name: string): void => {
+        const optionL = document.createElement('option');
+        optionL.value = value;
+        optionL.textContent = name;
+        groupL.appendChild(optionL);
+        const optionR = document.createElement('option');
+        optionR.value = value;
+        optionR.textContent = name;
+        groupR.appendChild(optionR);
+      };
+
+      for (const id of await fetchRigIdList()) {
+        let config;
+        try {
+          config = await fetchRigConfig(id);
+        } catch {
+          console.warn(`Skipping character "${id}": config.json is missing.`);
+          continue;
+        }
+
+        // Drop characters whose rig data is broken (structural errors or
+        // referenced part images that no longer exist).
+        let partsOk = true;
+        if (config && typeof config.parts === 'object') {
+          for (const key of ['body', 'head', 'leftArm', 'rightArm', 'leftLeg', 'rightLeg'] as const) {
+            const part = config.parts[key];
+            if (!part) continue; // optional part, not present
+            if (!part.src) {
+              partsOk = false;
+              break;
+            }
+            if (part.src.startsWith('data:') || part.src.startsWith('blob:')) continue;
+            try {
+              const res = await fetch(part.src, { method: 'HEAD' });
+              if (!res.ok) throw new Error(String(res.status));
+            } catch {
+              console.warn(`Skipping character "${id}": missing part image "${part.src}".`);
+              partsOk = false;
+              break;
+            }
+          }
+        }
+        if (!partsOk || !config) continue;
+
+        add(`rig:${id}`, config.name || id);
+      }
+      selectLeft.appendChild(groupL);
+      selectRight.appendChild(groupR);
+
+      // Browser-local characters (saved from the builder).
+      for (const id of listLocalCharacterIds()) {
+        const config = loadLocalCharacterConfig(id);
+        if (!config) continue;
+        const srcs = [
+          config.parts?.body?.src,
+          config.parts?.leftArm?.src,
+          config.parts?.rightArm?.src,
+          config.parts?.head?.src,
+          config.parts?.leftLeg?.src,
+          config.parts?.rightLeg?.src,
+        ].filter((s) => s !== undefined);
+        if (srcs.some((s) => !s)) {
+          console.warn(`Skipping local character "${id}": missing part images.`);
+          continue;
+        }
+        add(`rig:local:${id}`, config.name || id);
+      }
+      selectLeft.appendChild(groupLocalL);
+      selectRight.appendChild(groupLocalR);
+    } catch (err) {
+      console.warn('Failed to load rig characters:', err);
+    }
   }
 
   private startDisplayLoop(): void {
@@ -83,6 +185,7 @@ class AppManager {
     const btnToggleDebug = document.getElementById('btn-toggle-debug') as HTMLButtonElement;
     const btnToggleFreeze = document.getElementById('btn-toggle-freeze') as HTMLButtonElement;
     const btnToggleTheremin = document.getElementById('btn-toggle-theremin') as HTMLButtonElement;
+    const btnSim = document.getElementById('btn-sim') as HTMLButtonElement;
 
     const selectLeftPuppet = document.getElementById('select-left-puppet') as HTMLSelectElement;
     const selectRightPuppet = document.getElementById('select-right-puppet') as HTMLSelectElement;
@@ -95,12 +198,12 @@ class AppManager {
     btnCamera.addEventListener('click', async () => {
       if (this.tracker.getActiveState()) {
         this.tracker.stop();
-        btnCamera.textContent = '📷 Kamera';
+        btnCamera.textContent = 'Kamera';
         btnCamera.classList.remove('btn-secondary');
         btnCamera.classList.add('btn-primary');
         this.showStatus('Kamera byla zastavena.');
       } else {
-        btnCamera.textContent = '⏸️ Zastavit';
+        btnCamera.textContent = 'Zastavit';
         btnCamera.classList.remove('btn-primary');
         btnCamera.classList.add('btn-secondary');
         this.showStatus('Spouštění kamery...');
@@ -109,7 +212,7 @@ class AppManager {
           (results) => this.handleTrackingResults(results),
           (err) => {
             this.showStatus(`Chyba kamery: ${err.message}`);
-            btnCamera.textContent = '📷 Kamera';
+            btnCamera.textContent = 'Kamera';
             btnCamera.classList.remove('btn-secondary');
             btnCamera.classList.add('btn-primary');
           }
@@ -123,7 +226,7 @@ class AppManager {
     btnRecord.addEventListener('click', () => {
       if (this.recorder.getIsRecording()) {
         this.recorder.stop();
-        btnRecord.textContent = '🔴 Nahrávat';
+        btnRecord.textContent = 'Nahrávat';
         btnRecord.classList.remove('btn-secondary');
         btnRecord.classList.add('btn-danger');
         this.recBadge.classList.add('hidden');
@@ -135,12 +238,12 @@ class AppManager {
           this.renderer.getCanvasElement(),
           audioNode,
           (elapsedText) => {
-            this.recBadge.textContent = `🔴 REC ${elapsedText}`;
+            this.recBadge.textContent = `REC ${elapsedText}`;
           }
         );
 
         if (started) {
-          btnRecord.textContent = '⏹️ Uložit';
+          btnRecord.textContent = 'Uložit';
           btnRecord.classList.remove('btn-danger');
           btnRecord.classList.add('btn-secondary');
           this.recBadge.classList.remove('hidden');
@@ -169,12 +272,12 @@ class AppManager {
     btnToggleFreeze.addEventListener('click', () => {
       this.isMotionFrozen = !this.isMotionFrozen;
       if (this.isMotionFrozen) {
-        btnToggleFreeze.textContent = '🔒 Zamknuto';
+        btnToggleFreeze.textContent = 'Zamknuto';
         btnToggleFreeze.classList.remove('btn-secondary');
         btnToggleFreeze.classList.add('btn-primary');
         this.showStatus('Pohyb loutek byl uzamčen.');
       } else {
-        btnToggleFreeze.textContent = '🔓 Pohyb';
+        btnToggleFreeze.textContent = 'Pohyb';
         btnToggleFreeze.classList.remove('btn-primary');
         btnToggleFreeze.classList.add('btn-secondary');
         this.showStatus('Pohyb loutek aktivní.');
@@ -188,12 +291,12 @@ class AppManager {
       this.renderer.setThereminMode(active);
 
       if (active) {
-        btnToggleTheremin.textContent = '🎵 Theremin (ZAP)';
+        btnToggleTheremin.textContent = 'Theremin (ZAP)';
         btnToggleTheremin.classList.remove('btn-secondary');
         btnToggleTheremin.classList.add('btn-primary');
         this.showStatus('Theremin zvuky aktivní! Levá ruka = frekvence, pravá ruka = hlasitost.');
       } else {
-        btnToggleTheremin.textContent = '🎵 Theremin';
+        btnToggleTheremin.textContent = 'Theremin';
         btnToggleTheremin.classList.remove('btn-primary');
         btnToggleTheremin.classList.add('btn-secondary');
         this.showStatus('Theremin vypnut.');
@@ -201,15 +304,44 @@ class AppManager {
       setTimeout(() => this.hideStatus(), 3000);
     });
 
-    // Preset Selection
-    selectLeftPuppet.addEventListener('change', (e) => {
-      const preset = (e.target as HTMLSelectElement).value as PuppetPreset;
-      this.renderer.buildPuppetPreset('Left', preset);
+    // Toggle Hand Simulator (no webcam needed - body follows mouse, arms wave)
+    const setSimButton = (active: boolean): void => {
+      if (active) {
+        btnSim.textContent = 'Simulace (ZAP)';
+        btnSim.classList.remove('btn-secondary');
+        btnSim.classList.add('btn-primary');
+      } else {
+        btnSim.textContent = 'Simulace';
+        btnSim.classList.remove('btn-primary');
+        btnSim.classList.add('btn-secondary');
+      }
+    };
+
+    btnSim.addEventListener('click', () => {
+      const active = this.simulator.isRunning();
+      if (active) {
+        this.simulator.stop();
+      } else {
+        this.simulator.start();
+      }
+      setSimButton(!active);
     });
 
-    selectRightPuppet.addEventListener('change', (e) => {
+    // Auto-start the simulator when opened with ?sim=1 (camera-free testing).
+    if (new URLSearchParams(window.location.search).has('sim')) {
+      this.simulator.start();
+      setSimButton(true);
+    }
+
+    // Preset Selection
+    selectLeftPuppet.addEventListener('change', async (e) => {
       const preset = (e.target as HTMLSelectElement).value as PuppetPreset;
-      this.renderer.buildPuppetPreset('Right', preset);
+      await this.renderer.buildPuppetPreset('Left', preset);
+    });
+
+    selectRightPuppet.addEventListener('change', async (e) => {
+      const preset = (e.target as HTMLSelectElement).value as PuppetPreset;
+      await this.renderer.buildPuppetPreset('Right', preset);
     });
 
     // Change Background Color
@@ -262,6 +394,9 @@ class AppManager {
   }
 
   private handleTrackingResults(results: Results): void {
+    // While the simulator is active it fully drives the puppets (no webcam needed).
+    if (this.simulator.isRunning()) return;
+
     const width = this.debugCanvas.width;
     const height = this.debugCanvas.height;
 
@@ -395,7 +530,7 @@ class AppManager {
 
     if (elapsed >= 1000) {
       const currentFps = Math.round((this.frameCount * 1000) / elapsed);
-      this.fpsBadge.textContent = `⚡ ${currentFps} FPS`;
+      this.fpsBadge.textContent = `${currentFps} FPS`;
       this.frameCount = 0;
       this.lastFrameTime = now;
     }
