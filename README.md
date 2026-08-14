@@ -21,11 +21,11 @@
   - Same-origin local WASM bundling (`public/mediapipe/`) for 100% compatibility with **DuckDuckGo Privacy Browser**, **Brave**, **Safari (macOS/iOS)**, **Chrome**, **Firefox**, and **Edge**.
   - Intuitive mirrored X-coordinate control (moving left moves left).
 
-- **🎭 Two Rigged Cut-Out Characters** (file-based, auto-indexed)
+- **🎭 Cut-Out Characters** (file-based, auto-indexed)
   - 🧙 **demo** – A full six-part humanoid puppet (body, head, arms, legs).
-  - 🐌 **snek** – A snail puppet (body, head, arms) demonstrating optional parts.
   - Folders in `public/characters/` with a valid `config.json` are picked up automatically — no manual registry. The list is generated at dev-time and baked into the build by a Vite plugin.
-  - Plus **5 procedural presets**: Dragon, Bunny, Fox, Robot, Cat.
+  - Plus **procedural presets**: Fox, Robot.
+  - A **Prázdné (empty)** option hides the puppet for that hand so you can play with just one hand.
   - 💾 **Saved in the browser** – puppets built with the rig builder can be saved to `localStorage` and reappear in the character list on every visit.
 
 - **🔧 Rig Builder** (`/builder.html`)

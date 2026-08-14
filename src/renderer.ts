@@ -3,7 +3,7 @@ import { HandState } from './gestures';
 import { CutoutRigConfig, armRotation } from './rig';
 import { RigRenderParts, buildRigParts, fetchRigConfig, loadLocalCharacterConfig } from './rigAssets';
 
-export type PuppetPreset = 'dragon' | 'bunny' | 'fox' | 'robot' | 'cat' | 'custom' | `rig:${string}`;
+export type PuppetPreset = 'dragon' | 'bunny' | 'fox' | 'robot' | 'cat' | 'custom' | 'none' | `rig:${string}`;
 
 interface RigPuppetState {
   config: CutoutRigConfig;
@@ -119,8 +119,8 @@ export class PuppetRenderer {
     this.rightPuppet.container.position.set(-300, -300);
 
     // Build default character presets
-    await this.buildPuppetPreset('Left', 'dragon');
-    await this.buildPuppetPreset('Right', 'bunny');
+    await this.buildPuppetPreset('Left', 'fox');
+    await this.buildPuppetPreset('Right', 'robot');
   }
 
   public resize(width: number, height: number): void {
@@ -239,6 +239,9 @@ export class PuppetRenderer {
 
     if (isLeft) this.lastLeftState = state;
     else this.lastRightState = state;
+
+    // Empty slot: keep hand tracking for other features but don't move a puppet.
+    if (puppet.preset === 'none') return;
 
     // Smooth position update for Torso center
     puppet.container.position.set(state.smoothedPosition.x, state.smoothedPosition.y);
@@ -408,6 +411,14 @@ export class PuppetRenderer {
     puppet.preset = preset;
 
     puppet.container.removeChildren();
+
+    // Empty slot: hide the puppet entirely so only the other hand is used.
+    if (preset === 'none') {
+      puppet.rig = undefined;
+      puppet.container.visible = false;
+      return;
+    }
+    puppet.container.visible = true;
 
     // Cut-out rig presets (historical characters) are loaded asynchronously.
     if (preset.startsWith('rig:')) {
