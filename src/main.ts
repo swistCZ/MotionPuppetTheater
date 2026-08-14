@@ -88,26 +88,15 @@ class AppManager {
       const selectLeft = document.getElementById('select-left-puppet') as HTMLSelectElement;
       const selectRight = document.getElementById('select-right-puppet') as HTMLSelectElement;
 
-      const groupL = document.createElement('optgroup');
-      groupL.label = 'Historičtí';
-      const groupR = document.createElement('optgroup');
-      groupR.label = 'Historičtí';
-      const groupLocalL = document.createElement('optgroup');
-      groupLocalL.label = 'Uložené v prohlížeči';
-      const groupLocalR = document.createElement('optgroup');
-      groupLocalR.label = 'Uložené v prohlížeči';
-
-      const add = (value: string, name: string): void => {
-        const optionL = document.createElement('option');
-        optionL.value = value;
-        optionL.textContent = name;
-        groupL.appendChild(optionL);
-        const optionR = document.createElement('option');
-        optionR.value = value;
-        optionR.textContent = name;
-        groupR.appendChild(optionR);
+      const makeOption = (value: string, name: string): HTMLOptionElement => {
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = name;
+        return option;
       };
 
+      // 1. File-based characters (public/characters/) — placed at the very top.
+      const fileOptions: HTMLOptionElement[] = [];
       for (const id of await fetchRigIdList()) {
         let config;
         try {
@@ -141,12 +130,17 @@ class AppManager {
         }
         if (!partsOk || !config) continue;
 
-        add(`rig:${id}`, config.name || id);
+        fileOptions.push(makeOption(`rig:${id}`, config.name || id));
       }
-      selectLeft.appendChild(groupL);
-      selectRight.appendChild(groupR);
+      selectLeft.prepend(...fileOptions.map((o) => o.cloneNode(true) as HTMLOptionElement));
+      selectRight.prepend(...fileOptions.map((o) => o.cloneNode(true) as HTMLOptionElement));
 
-      // Browser-local characters (saved from the builder).
+      // 2. Browser-local characters (saved from the builder) — their own category.
+      const groupLocalL = document.createElement('optgroup');
+      groupLocalL.label = 'Uložené v prohlížeči';
+      const groupLocalR = document.createElement('optgroup');
+      groupLocalR.label = 'Uložené v prohlížeči';
+
       for (const id of listLocalCharacterIds()) {
         const config = loadLocalCharacterConfig(id);
         if (!config) continue;
@@ -162,10 +156,11 @@ class AppManager {
           console.warn(`Skipping local character "${id}": missing part images.`);
           continue;
         }
-        add(`rig:local:${id}`, config.name || id);
+        groupLocalL.appendChild(makeOption(`rig:local:${id}`, config.name || id));
+        groupLocalR.appendChild(makeOption(`rig:local:${id}`, config.name || id));
       }
-      selectLeft.appendChild(groupLocalL);
-      selectRight.appendChild(groupLocalR);
+      if (groupLocalL.children.length > 0) selectLeft.appendChild(groupLocalL);
+      if (groupLocalR.children.length > 0) selectRight.appendChild(groupLocalR);
     } catch (err) {
       console.warn('Failed to load rig characters:', err);
     }
