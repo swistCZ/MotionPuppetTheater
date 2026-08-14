@@ -45,6 +45,8 @@ export class PuppetRenderer {
   private rightThereminText: Text;
   private isThereminMode: boolean = false;
   private animFrameCounter: number = 0;
+  private lastLeftState?: HandState;
+  private lastRightState?: HandState;
 
   // Background
   private bgGraphics: Graphics;
@@ -235,6 +237,9 @@ export class PuppetRenderer {
 
     if (!puppet.container) return;
 
+    if (isLeft) this.lastLeftState = state;
+    else this.lastRightState = state;
+
     // Smooth position update for Torso center
     puppet.container.position.set(state.smoothedPosition.x, state.smoothedPosition.y);
 
@@ -348,6 +353,12 @@ export class PuppetRenderer {
   public hideHand(handType: 'Left' | 'Right'): void {
     const puppet = handType === 'Left' ? this.leftPuppet : this.rightPuppet;
     puppet.container.position.set(-500, -500);
+    if (handType === 'Left') this.lastLeftState = undefined;
+    else this.lastRightState = undefined;
+  }
+
+  public getLastHandState(handType: 'Left' | 'Right'): HandState | undefined {
+    return handType === 'Left' ? this.lastLeftState : this.lastRightState;
   }
 
   public async setCustomPuppetDataUrl(handType: 'Left' | 'Right', dataUrl: string): Promise<void> {

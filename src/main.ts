@@ -174,6 +174,26 @@ class AppManager {
   private startDisplayLoop(): void {
     const loop = () => {
       this.updateFps();
+
+      // Theremin is driven from the render loop so it also works in simulator
+      // mode (handleTrackingResults early-returns while the sim is running).
+      if (this.theremin.isEnabled()) {
+        const leftState = this.renderer.getLastHandState('Left');
+        const rightState = this.renderer.getLastHandState('Right');
+
+        const leftY = leftState ? leftState.wristPosition.y : undefined;
+        const rightY = rightState ? rightState.wristPosition.y : undefined;
+
+        this.theremin.updateHands(leftY, rightY);
+
+        const activePitchY = leftY !== undefined ? leftY : rightY;
+        const pitchRatio = activePitchY !== undefined ? 1.0 - Math.max(0, Math.min(1, activePitchY)) : 0.5;
+        const freq = 130 + pitchRatio * 750;
+        const volRatio = rightY !== undefined ? 1.0 - Math.max(0, Math.min(1, rightY)) : (leftY !== undefined ? 0.5 : 0);
+
+        this.renderer.updateThereminVisuals(leftState, rightState, freq, volRatio);
+      }
+
       requestAnimationFrame(loop);
     };
     requestAnimationFrame(loop);
@@ -412,8 +432,6 @@ class AppManager {
     }
 
     const detectedHands = new Set<'Left' | 'Right'>();
-    let leftHandState: HandState | undefined;
-    let rightHandState: HandState | undefined;
 
     if (results.multiHandLandmarks && results.multiHandedness) {
       // 1. Prepare raw hand inputs
@@ -452,12 +470,6 @@ class AppManager {
           0.45
         );
 
-        if (handType === 'Left') {
-          leftHandState = state;
-        } else {
-          rightHandState = state;
-        }
-
         // Store updated position
         this.prevPositions.set(handType, state.smoothedPosition);
 
@@ -485,22 +497,6 @@ class AppManager {
           });
         }
       }
-    }
-
-    // Update Theremin audio & visual orbs
-    if (this.theremin.isEnabled()) {
-      const leftY = leftHandState ? leftHandState.wristPosition.y : undefined;
-      const rightY = rightHandState ? rightHandState.wristPosition.y : undefined;
-
-      this.theremin.updateHands(leftY, rightY);
-
-      // Compute display metrics
-      const activePitchY = leftY !== undefined ? leftY : rightY;
-      const pitchRatio = activePitchY !== undefined ? 1.0 - Math.max(0, Math.min(1, activePitchY)) : 0.5;
-      const freq = 130 + pitchRatio * 750;
-      const volRatio = rightY !== undefined ? 1.0 - Math.max(0, Math.min(1, rightY)) : (leftY !== undefined ? 0.5 : 0);
-
-      this.renderer.updateThereminVisuals(leftHandState, rightHandState, freq, volRatio);
     }
 
     // Handle missing hand frames
