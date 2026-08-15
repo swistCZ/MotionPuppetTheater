@@ -1,9 +1,24 @@
 import { GIFEncoder, quantize, applyPalette } from 'gifenc';
 import { zipSync } from 'fflate';
+import { StagePoseSnapshot } from './renderer';
 
 export interface StopMotionFrame {
   id: string;
   dataUrl: string;
+  pose?: StagePoseSnapshot;
+}
+
+export interface StopMotionProject {
+  version: 1;
+  name: string;
+  createdAt: number;
+  fps: number;
+  frames: StopMotionFrame[];
+  backgroundAssets?: {
+    stripFarDataUrl?: string;
+    stripNearDataUrl?: string;
+    customBgDataUrl?: string;
+  };
 }
 
 export interface StopMotionElements {
@@ -13,6 +28,8 @@ export interface StopMotionElements {
   playCanvas: HTMLCanvasElement;
   gridCanvas: HTMLCanvasElement;
   btnSnap: HTMLButtonElement;
+  btnLoadPose?: HTMLButtonElement;
+  btnUpdateFrame?: HTMLButtonElement;
   btnDelete: HTMLButtonElement;
   btnDuplicate: HTMLButtonElement;
   btnLeft: HTMLButtonElement;
@@ -29,6 +46,8 @@ export interface StopMotionElements {
   btnExportWebm: HTMLButtonElement;
   btnExportGif: HTMLButtonElement;
   btnExportZip: HTMLButtonElement;
+  btnSaveProject?: HTMLButtonElement;
+  uploadProject?: HTMLInputElement;
   fpsSelect: HTMLSelectElement;
   ghostSelect: HTMLSelectElement;
   onStatus?: (message: string) => void;
@@ -42,6 +61,10 @@ export interface StopMotionElements {
   stripPrev?: HTMLButtonElement;
   stripNext?: HTMLButtonElement;
   stripMeta?: HTMLElement;
+  getPoseSnapshot?: () => StagePoseSnapshot;
+  applyPoseSnapshot?: (snapshot: StagePoseSnapshot) => Promise<void> | void;
+  getBackgroundAssets?: () => { stripFarDataUrl?: string; stripNearDataUrl?: string; customBgDataUrl?: string };
+  applyBackgroundAssets?: (assets: { stripFarDataUrl?: string; stripNearDataUrl?: string; customBgDataUrl?: string }) => Promise<void> | void;
 }
 
 /** Max full-size thumbs rendered at once; beyond this the strip is windowed. */
@@ -80,6 +103,7 @@ export class StopMotionController {
   private ghostCount: number = 1;
   private undoStack: TimelineSnapshot[] = [];
   private redoStack: TimelineSnapshot[] = [];
+  private draggedFrameIndex: number | null = null;
 
   private onionCtx: CanvasRenderingContext2D;
   private playCtx: CanvasRenderingContext2D;
@@ -95,6 +119,8 @@ export class StopMotionController {
     this.ghostCount = parseInt(elements.ghostSelect.value, 10) || 1;
 
     this.elements.btnSnap.addEventListener('click', () => this.snapFrame());
+    this.elements.btnLoadPose?.addEventListener('click', () => void this.loadPoseForSelected());
+    this.elements.btnUpdateFrame?.addEventListener('click', () => this.updateSelectedFrame());
     this.elements.btnDelete.addEventListener('click', () => this.deleteSelected());
     this.elements.btnDuplicate.addEventListener('click', () => this.duplicateSelected());
     this.elements.btnLeft.addEventListener('click', () => this.moveSelected(-1));
@@ -121,6 +147,14 @@ export class StopMotionController {
     this.elements.btnExportWebm.addEventListener('click', () => void this.exportWebM());
     this.elements.btnExportGif.addEventListener('click', () => void this.exportGif());
     this.elements.btnExportZip.addEventListener('click', () => this.exportZip());
+    this.elements.btnSaveProject?.addEventListener('click', () => this.saveProject());
+    this.elements.uploadProject?.addEventListener('change', async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (file) {
+        await this.loadProjectFile(file);
+        (e.target as HTMLInputElement).value = '';
+      }
+    });
     this.elements.fpsSelect.addEventListener('change', () => {
       if (this.playing) this.restartPlayback();
     });
@@ -197,11 +231,40 @@ export class StopMotionController {
     this.elements.renderNow?.();
     const dataUrl = canvas.toDataURL('image/png');
     this.elements.setHandlesVisible?.(true);
+    const pose = this.elements.getPoseSnapshot?.();
     const id = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}`;
-    this.frames.push({ id, dataUrl });
+    this.frames.push({ id, dataUrl, pose });
     this.selectedIndex = this.frames.length - 1;
     this.afterEdit();
     this.elements.onAfterSnap?.();
+  }
+
+  /** Loads the pose snapshot from the selected frame back onto the live stage. */
+  public async loadPoseForSelected(): Promise<void> {
+    if (this.selectedIndex === null) return;
+    const frame = this.frames[this.selectedIndex];
+    if (!frame || !frame.pose) {
+      this.elements.onStatus?.(`Snímek ${this.selectedIndex + 1} nemá uloženou pózu.`);
+      return;
+    }
+    await this.elements.applyPoseSnapshot?.(frame.pose);
+    this.elements.onStatus?.(`Póza ze snímku ${this.selectedIndex + 1} načtena na scénu.`);
+  }
+
+  /** Overwrites the selected frame with the live stage (new capture + new pose). */
+  public updateSelectedFrame(): void {
+    if (this.selectedIndex === null) return;
+    this.recordHistory();
+    this.elements.setHandlesVisible?.(false);
+    const canvas = this.canvasSource();
+    this.elements.renderNow?.();
+    const dataUrl = canvas.toDataURL('image/png');
+    this.elements.setHandlesVisible?.(true);
+    const pose = this.elements.getPoseSnapshot?.();
+    const existing = this.frames[this.selectedIndex];
+    this.frames[this.selectedIndex] = { id: existing.id, dataUrl, pose };
+    this.afterEdit();
+    this.elements.onStatus?.(`Snímek ${this.selectedIndex + 1} byl přepsán aktuální scénou.`);
   }
 
   public deleteSelected(): void {
@@ -220,7 +283,11 @@ export class StopMotionController {
     if (this.selectedIndex === null) return;
     this.recordHistory();
     const copy = this.frames[this.selectedIndex];
-    const dup = { ...copy, id: `${copy.id}-dup-${Date.now()}` };
+    const dup: StopMotionFrame = {
+      ...copy,
+      id: `${copy.id}-dup-${Date.now()}`,
+      pose: copy.pose ? JSON.parse(JSON.stringify(copy.pose)) : undefined,
+    };
     this.frames.splice(this.selectedIndex + 1, 0, dup);
     this.selectedIndex += 1;
     this.afterEdit();
@@ -230,10 +297,18 @@ export class StopMotionController {
     if (this.selectedIndex === null) return;
     const target = this.selectedIndex + delta;
     if (target < 0 || target >= this.frames.length) return;
+    this.moveFrame(this.selectedIndex, target);
+  }
+
+  /** Moves a frame from one timeline position to another (used also by drag & drop). */
+  public moveFrame(fromIndex: number, toIndex: number): void {
+    if (fromIndex === toIndex) return;
+    if (fromIndex < 0 || fromIndex >= this.frames.length) return;
+    if (toIndex < 0 || toIndex >= this.frames.length) return;
     this.recordHistory();
-    const [frame] = this.frames.splice(this.selectedIndex, 1);
-    this.frames.splice(target, 0, frame);
-    this.selectedIndex = target;
+    const [frame] = this.frames.splice(fromIndex, 1);
+    this.frames.splice(toIndex, 0, frame);
+    this.selectedIndex = toIndex;
     this.afterEdit();
   }
 
@@ -565,14 +640,52 @@ export class StopMotionController {
       label.className = 'sm-frame-index';
       label.textContent = String(index + 1);
 
-      thumb.appendChild(img);
-      thumb.appendChild(label);
+      thumb.draggable = true;
+      thumb.addEventListener('dragstart', (e) => {
+        this.draggedFrameIndex = index;
+        thumb.classList.add('dragging');
+        if (e.dataTransfer) {
+          e.dataTransfer.effectAllowed = 'move';
+          e.dataTransfer.setData('text/plain', String(index));
+        }
+      });
+      thumb.addEventListener('dragend', () => {
+        this.draggedFrameIndex = null;
+        thumb.classList.remove('dragging');
+        strip.querySelectorAll('.sm-frame-thumb').forEach((t) => t.classList.remove('drag-over-left', 'drag-over-right'));
+      });
+      thumb.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+        const rect = thumb.getBoundingClientRect();
+        const isLeft = e.clientX < rect.left + rect.width / 2;
+        thumb.classList.toggle('drag-over-left', isLeft);
+        thumb.classList.toggle('drag-over-right', !isLeft);
+      });
+      thumb.addEventListener('dragleave', () => {
+        thumb.classList.remove('drag-over-left', 'drag-over-right');
+      });
+      thumb.addEventListener('drop', (e) => {
+        e.preventDefault();
+        thumb.classList.remove('drag-over-left', 'drag-over-right');
+        const from = this.draggedFrameIndex;
+        if (from === null || from === index) return;
+        const rect = thumb.getBoundingClientRect();
+        const isLeft = e.clientX < rect.left + rect.width / 2;
+        let target = isLeft ? index : index + 1;
+        if (from < target) target -= 1;
+        this.moveFrame(from, target);
+      });
+
       thumb.addEventListener('click', () => {
         this.selectedIndex = index;
         this.renderStrip();
         this.updateOnion();
         this.updateAb();
         this.updateButtons();
+      });
+      thumb.addEventListener('dblclick', () => {
+        void this.loadPoseForSelected();
       });
       strip.appendChild(thumb);
     }
@@ -820,12 +933,68 @@ export class StopMotionController {
     this.updateButtons();
   }
 
+  /** Saves the entire timeline project (all frames, poses and background assets) to an .mpt file. */
+  public saveProject(): void {
+    if (this.frames.length === 0) {
+      this.elements.onStatus?.('Časová osa je prázdná — není co uložit.');
+      return;
+    }
+    const project: StopMotionProject = {
+      version: 1,
+      name: `Animace-${this.dateStamp()}`,
+      createdAt: Date.now(),
+      fps: parseInt(this.elements.fpsSelect.value, 10) || 24,
+      frames: this.frames,
+      backgroundAssets: this.elements.getBackgroundAssets?.(),
+    };
+    const jsonStr = JSON.stringify(project);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `animace-${this.dateStamp()}.mpt`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    this.elements.onStatus?.(`Projekt uložen (${this.frames.length} snímků).`);
+  }
+
+  /** Loads a previously saved project (.mpt or .json) from disk. */
+  public async loadProjectFile(file: File): Promise<void> {
+    try {
+      const text = await file.text();
+      const json = JSON.parse(text) as Partial<StopMotionProject>;
+      if (!json || !Array.isArray(json.frames)) {
+        throw new Error('Neplatný formát souboru projektu (.mpt).');
+      }
+      this.recordHistory();
+      if (json.backgroundAssets && this.elements.applyBackgroundAssets) {
+        await this.elements.applyBackgroundAssets(json.backgroundAssets);
+      }
+      if (json.fps && this.elements.fpsSelect) {
+        this.elements.fpsSelect.value = String(json.fps);
+      }
+      this.frames = json.frames;
+      this.selectedIndex = this.frames.length > 0 ? 0 : null;
+      if (this.selectedIndex !== null && this.frames[0]?.pose && this.elements.applyPoseSnapshot) {
+        await this.elements.applyPoseSnapshot(this.frames[0].pose);
+      }
+      this.afterEdit();
+      this.elements.onStatus?.(`Projekt načten: ${this.frames.length} snímků.`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.elements.onStatus?.(`Chyba načtení projektu: ${msg}`);
+    }
+  }
+
   private updateButtons(): void {
     const count = this.frames.length;
     const busy = this.exporting;
     const hasSelection = this.selectedIndex !== null && count > 0;
+    const selectedHasPose = hasSelection && !!this.frames[this.selectedIndex!]?.pose;
 
     this.elements.btnSnap.disabled = busy;
+    if (this.elements.btnLoadPose) this.elements.btnLoadPose.disabled = busy || !selectedHasPose;
+    if (this.elements.btnUpdateFrame) this.elements.btnUpdateFrame.disabled = busy || !hasSelection;
     this.elements.btnDelete.disabled = busy || !hasSelection;
     this.elements.btnDuplicate.disabled = busy || !hasSelection;
     this.elements.btnPlay.disabled = busy || count === 0;
@@ -839,5 +1008,6 @@ export class StopMotionController {
     this.elements.btnExportWebm.disabled = busy || count === 0;
     this.elements.btnExportGif.disabled = busy || count === 0;
     this.elements.btnExportZip.disabled = busy || count === 0;
+    if (this.elements.btnSaveProject) this.elements.btnSaveProject.disabled = busy || count === 0;
   }
 }

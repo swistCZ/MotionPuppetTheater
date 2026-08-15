@@ -104,7 +104,9 @@
         <!-- Stop-Motion Timeline Panel -->
         <section id="sm-panel" class="sm-panel hidden">
           <div class="sm-controls">
-            <button id="sm-btn-snap" class="btn btn-danger" title="Uložit aktuální scénu jako snímek">Snímek</button>
+            <button id="sm-btn-snap" class="btn btn-danger" title="Uložit aktuální scénu jako nový snímek">Snímek</button>
+            <button id="sm-btn-load-pose" class="btn btn-secondary" title="Aktivovat a načíst pózu i pozadí vybraného snímku na scénu" disabled>Načíst pózu</button>
+            <button id="sm-btn-update-frame" class="btn btn-secondary" title="Přepsat vybraný snímek aktuální scénou (aktualizuje náhled i pózu)" disabled>Přepsat</button>
             <button id="sm-btn-delete" class="btn btn-secondary" title="Smazat vybraný snímek" disabled>Smazat</button>
             <button id="sm-btn-duplicate" class="btn btn-secondary" title="Duplikovat vybraný snímek" disabled>Duplikovat</button>
             <button id="sm-btn-left" class="btn btn-secondary" title="Posunout snímek doleva" disabled>&larr;</button>
@@ -134,6 +136,12 @@
             <button id="sm-btn-export-webm" class="btn btn-secondary" title="Vyexportovat animaci jako WebM video" disabled>WebM</button>
             <button id="sm-btn-export-gif" class="btn btn-secondary" title="Vyexportovat animaci jako GIF" disabled>GIF</button>
             <button id="sm-btn-export-zip" class="btn btn-secondary" title="Stáhnout snímky jako PNG v ZIP archivu" disabled>PNG (ZIP)</button>
+            <span class="sm-separator"></span>
+            <button id="sm-btn-save-project" class="btn btn-secondary" title="Uložit celý projekt animace (.mpt) na disk pro pozdější pokračování" disabled>Uložit projekt</button>
+            <label class="file-upload-btn btn-secondary" title="Otevřít dříve uložený projekt (.mpt / .json) z disku">
+              Otevřít projekt
+              <input type="file" id="sm-upload-project" accept=".mpt,.json" />
+            </label>
           </div>
           <div class="sm-controls">
             <label class="compact-label">Pozadí:</label>
@@ -232,9 +240,14 @@
           <section class="help-section">
             <h3>Stop-motion – časová osa</h3>
             <ul class="help-list">
-              <li><strong>Snímek</strong> – uloží aktuální scénu jako PNG.</li>
-              <li><strong>Smazat / Duplikovat</strong> – smaže / zkopíruje vybraný snímek; <strong>&larr; &rarr;</strong> jej přeřadí.</li>
+              <li><strong>Snímek</strong> – uloží aktuální scénu (obrázek i přesnou pózu loutek a pozadí).</li>
+              <li><strong>Načíst pózu</strong> (nebo dvojklik na snímek) – aktivuje vybraný snímek a načte jeho pózu i pozadí zpět na scénu k dalším úpravám.</li>
+              <li><strong>Přepsat</strong> – přefotí vybraný snímek aktuální scénou (aktualizuje náhled i uloženou pózu).</li>
+              <li><strong>Smazat / Duplikovat</strong> – smaže / zkopíruje vybraný snímek.</li>
+              <li><strong>Přetahování myší (Drag & Drop)</strong> – chytni náhled snímku myší a přesuň ho kamkoliv v časové ose.</li>
+              <li><strong>&larr; &rarr;</strong> – přeřadí vybraný snímek doleva / doprava o 1 pozici.</li>
               <li><strong>Zpět / Vpřed</strong> – vrací a obnovuje úpravy časové osy; <strong>Smazat vše</strong> smaže celou osu (s potvrzením).</li>
+              <li><strong>Uložit / Otevřít projekt</strong> – stáhne celý projekt (.mpt JSON) se všemi snímky, pózami a pozadím na disk pro pozdější pokračování.</li>
               <li><strong>Přehrát</strong> – přehraje snímky; <strong>Smyčka</strong> opakuje; <strong>Pozpátku</strong> hraje od posledního snímku k prvnímu.</li>
               <li><strong>FPS</strong> – rychlost přehrávání (12 nebo 24).</li>
               <li><strong>Onion</strong> – průsvitný duch vybraného snímku pod živou scénou; <strong>Duchů</strong> určuje počet duchů (1–3).</li>

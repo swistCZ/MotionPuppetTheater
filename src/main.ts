@@ -93,6 +93,8 @@ class AppManager {
         playCanvas: document.getElementById('sm-play-canvas') as HTMLCanvasElement,
         gridCanvas: document.getElementById('sm-grid-canvas') as HTMLCanvasElement,
         btnSnap: document.getElementById('sm-btn-snap') as HTMLButtonElement,
+        btnLoadPose: document.getElementById('sm-btn-load-pose') as HTMLButtonElement,
+        btnUpdateFrame: document.getElementById('sm-btn-update-frame') as HTMLButtonElement,
         btnDelete: document.getElementById('sm-btn-delete') as HTMLButtonElement,
         btnDuplicate: document.getElementById('sm-btn-duplicate') as HTMLButtonElement,
         btnLeft: document.getElementById('sm-btn-left') as HTMLButtonElement,
@@ -109,6 +111,8 @@ class AppManager {
         btnExportWebm: document.getElementById('sm-btn-export-webm') as HTMLButtonElement,
         btnExportGif: document.getElementById('sm-btn-export-gif') as HTMLButtonElement,
         btnExportZip: document.getElementById('sm-btn-export-zip') as HTMLButtonElement,
+        btnSaveProject: document.getElementById('sm-btn-save-project') as HTMLButtonElement,
+        uploadProject: document.getElementById('sm-upload-project') as HTMLInputElement,
         fpsSelect: document.getElementById('sm-fps') as HTMLSelectElement,
         ghostSelect: document.getElementById('sm-onion-ghosts') as HTMLSelectElement,
         audioSource: () => this.theremin.getAudioStreamNode(),
@@ -122,6 +126,16 @@ class AppManager {
         stripPrev: document.getElementById('sm-strip-prev') as HTMLButtonElement,
         stripNext: document.getElementById('sm-strip-next') as HTMLButtonElement,
         stripMeta: document.getElementById('sm-strip-meta') as HTMLElement,
+        getPoseSnapshot: () => this.renderer.capturePoseSnapshot(),
+        applyPoseSnapshot: async (snap) => {
+          await this.renderer.applyPoseSnapshot(snap);
+        },
+        getBackgroundAssets: () => this.renderer.getBackgroundAssets(),
+        applyBackgroundAssets: async (assets) => {
+          if (assets.stripFarDataUrl) await this.renderer.setStripBackground(assets.stripFarDataUrl);
+          if (assets.stripNearDataUrl) await this.renderer.setForegroundStripBackground(assets.stripNearDataUrl);
+          if (assets.customBgDataUrl) await this.renderer.setCustomBackgroundDataUrl(assets.customBgDataUrl);
+        },
       }
     );
 

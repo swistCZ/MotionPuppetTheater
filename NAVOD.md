@@ -70,11 +70,16 @@ Zapni **Stop-motion** — dole se objeví časová osa. Figurky se okamžitě zo
 
 ### Časová osa
 
-- **Snímek** — uloží aktuální scénu jako PNG.
+- **Snímek** — uloží aktuální scénu (obrázek i přesnou pózu loutek a pozadí).
+- **Načíst pózu** (nebo dvojklik na snímek) — aktivuje vybraný snímek a načte jeho pózu i pozadí zpět na scénu k dalším úpravám.
+- **Přepsat** — přefotí vybraný snímek aktuální scénou (aktualizuje náhled i uloženou pózu).
 - **Smazat / Duplikovat** — smaže / zkopíruje vybraný snímek.
-- **← →** — přeřadí vybraný snímek doleva/doprava.
+- **Přetahování myší (Drag & Drop)** — chytni náhled snímku myší a přetáhni ho kamkoliv v časové ose.
+- **← →** — přeřadí vybraný snímek doleva/doprava o jednu pozici.
 - **Zpět / Vpřed** — vrací a obnovuje úpravy časové osy (až 50 kroků).
 - **Smazat vše** — smaže celou časovou osu (s potvrzením; lze vrátit Zpět).
+- **Uložit projekt** — stáhne soubor `.mpt` (JSON) se všemi snímky, pózami a pozadím.
+- **Otevřít projekt** — načte dříve uložený `.mpt` projekt a můžeš pokračovat v rozpracované animaci.
 - **Přehrát** — přehraje snímky; **Smyčka** zapne/vypne opakování; **Pozpátku** hraje od posledního snímku k prvnímu.
 - **FPS** — rychlost přehrávání (12 nebo 24).
 - **Onion** — průsvitný duch vybraného snímku pod živou scénou (pomáhá navazovat pózy).

@@ -8,6 +8,33 @@ const HANDLE_R = 14;
 
 export type PuppetPreset = 'fox' | 'robot' | 'custom' | 'none' | `rig:${string}`;
 
+export interface PuppetPoseSnapshot {
+  preset: PuppetPreset;
+  position: Point2D;
+  rotation: number;
+  manualPose?: Partial<Record<RigPartKey, Point2D>>;
+  rigRotations?: {
+    leftArm?: number;
+    rightArm?: number;
+    leftLeg?: number;
+    rightLeg?: number;
+  };
+  headPosition?: Point2D;
+}
+
+export interface StagePoseSnapshot {
+  leftPuppet: PuppetPoseSnapshot;
+  rightPuppet: PuppetPoseSnapshot;
+  background: {
+    colorHex: number;
+    stripActive: boolean;
+    stripNearActive: boolean;
+    stripOffsetX: number;
+    stripOffsetY: number;
+    stripParallaxFactor: number;
+  };
+}
+
 // Mild in-plane rotation: an upright hand (wrist below palm) maps to 0 deg,
 // and the container tilt is damped so the flat sprite only leans, never flips.
 const ROT_BASE = -Math.PI / 2;
@@ -88,6 +115,9 @@ export class PuppetRenderer {
   private bgSprite: Sprite | null = null;
   private bgTiling: TilingSprite | null = null;
   private bgTilingNear: TilingSprite | null = null;
+  private stripFarDataUrl?: string;
+  private stripNearDataUrl?: string;
+  private customBgDataUrl?: string;
   private stripOffsetX: number = 0;
   private stripOffsetY: number = 0;
   private stripParallaxFactor: number = 1.6;
@@ -897,6 +927,7 @@ export class PuppetRenderer {
       this.bgTiling.visible = true;
       this.bgGraphics.clear();
       if (this.bgSprite) this.bgSprite.visible = false;
+      this.stripFarDataUrl = dataUrl;
       this.stripOffsetX = 0;
       this.stripOffsetY = 0;
       this.updateStripOffsets();
@@ -972,6 +1003,7 @@ export class PuppetRenderer {
       this.bgTilingNear.visible = true;
       this.bgGraphics.clear();
       if (this.bgSprite) this.bgSprite.visible = false;
+      this.stripNearDataUrl = dataUrl;
       this.updateStripOffsets();
     } catch (err) {
       console.error('Failed to load near strip background image:', err);
@@ -999,9 +1031,98 @@ export class PuppetRenderer {
       this.bgSprite.width = this.width;
       this.bgSprite.height = this.height;
       this.bgSprite.visible = true;
+      this.customBgDataUrl = dataUrl;
     } catch (err) {
       console.error('Failed to load custom background image:', err);
     }
+  }
+
+  public getBackgroundAssets(): { stripFarDataUrl?: string; stripNearDataUrl?: string; customBgDataUrl?: string } {
+    return {
+      stripFarDataUrl: this.stripFarDataUrl,
+      stripNearDataUrl: this.stripNearDataUrl,
+      customBgDataUrl: this.customBgDataUrl,
+    };
+  }
+
+  /** Captures the exact pose state of both puppets and the background for timeline history / editing. */
+  public capturePoseSnapshot(): StagePoseSnapshot {
+    const capturePuppet = (puppet: DynamicPuppet): PuppetPoseSnapshot => {
+      const snap: PuppetPoseSnapshot = {
+        preset: puppet.preset,
+        position: { x: puppet.container.position.x, y: puppet.container.position.y },
+        rotation: puppet.container.rotation,
+        manualPose: puppet.manualPose ? { ...puppet.manualPose } : undefined,
+      };
+      if (puppet.rig) {
+        const { parts } = puppet.rig;
+        snap.rigRotations = {
+          leftArm: parts.leftArmSprite.rotation,
+          rightArm: parts.rightArmSprite.rotation,
+          leftLeg: parts.leftLegSprite?.rotation,
+          rightLeg: parts.rightLegSprite?.rotation,
+        };
+        if (parts.headContainer) {
+          snap.headPosition = { x: parts.headContainer.position.x, y: parts.headContainer.position.y };
+        }
+      }
+      return snap;
+    };
+
+    return {
+      leftPuppet: capturePuppet(this.leftPuppet),
+      rightPuppet: capturePuppet(this.rightPuppet),
+      background: {
+        colorHex: this.currentBgColorHex,
+        stripActive: !!(this.bgTiling && this.bgTiling.visible),
+        stripNearActive: !!(this.bgTilingNear && this.bgTilingNear.visible),
+        stripOffsetX: this.stripOffsetX,
+        stripOffsetY: this.stripOffsetY,
+        stripParallaxFactor: this.stripParallaxFactor,
+      },
+    };
+  }
+
+  /** Restores the exact pose of both puppets and background from a snapshot. */
+  public async applyPoseSnapshot(snapshot: StagePoseSnapshot): Promise<void> {
+    const applyPuppet = async (puppet: DynamicPuppet, snap: PuppetPoseSnapshot, handType: 'Left' | 'Right'): Promise<void> => {
+      if (puppet.preset !== snap.preset) {
+        await this.buildPuppetPreset(handType, snap.preset);
+      }
+      puppet.container.position.set(snap.position.x, snap.position.y);
+      puppet.container.rotation = snap.rotation;
+      puppet.manualPose = snap.manualPose ? { ...snap.manualPose } : undefined;
+
+      if (puppet.rig) {
+        const { parts } = puppet.rig;
+        if (snap.rigRotations) {
+          if (snap.rigRotations.leftArm !== undefined) parts.leftArmSprite.rotation = snap.rigRotations.leftArm;
+          if (snap.rigRotations.rightArm !== undefined) parts.rightArmSprite.rotation = snap.rigRotations.rightArm;
+          if (parts.leftLegSprite && snap.rigRotations.leftLeg !== undefined) parts.leftLegSprite.rotation = snap.rigRotations.leftLeg;
+          if (parts.rightLegSprite && snap.rigRotations.rightLeg !== undefined) parts.rightLegSprite.rotation = snap.rigRotations.rightLeg;
+        }
+        if (parts.headContainer && snap.headPosition) {
+          parts.headContainer.position.set(snap.headPosition.x, snap.headPosition.y);
+        }
+      } else if (puppet.preset !== 'none' && puppet.preset !== 'custom') {
+        this.renderProceduralPuppet(puppet);
+      }
+
+      if (this.poseEditing) this.layoutHandles(puppet);
+    };
+
+    await applyPuppet(this.leftPuppet, snapshot.leftPuppet, 'Left');
+    await applyPuppet(this.rightPuppet, snapshot.rightPuppet, 'Right');
+
+    const bg = snapshot.background;
+    this.currentBgColorHex = bg.colorHex;
+    if (this.bgTiling) this.bgTiling.visible = bg.stripActive;
+    if (this.bgTilingNear) this.bgTilingNear.visible = bg.stripNearActive;
+    if (!bg.stripActive && !bg.stripNearActive && !this.bgSprite?.visible) {
+      this.drawDefaultBackground(bg.colorHex);
+    }
+    this.stripParallaxFactor = bg.stripParallaxFactor;
+    this.setStripOffset(bg.stripOffsetX, bg.stripOffsetY);
   }
 
   public updateHandState(state: HandState, force = false): void {
