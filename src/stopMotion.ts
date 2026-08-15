@@ -636,9 +636,10 @@ export class StopMotionController {
 
     for (let index = start; index < end; index++) {
       const frame = this.frames[index];
-      const thumb = document.createElement('button');
-      thumb.type = 'button';
+      const thumb = document.createElement('div');
       thumb.className = 'sm-frame-thumb';
+      thumb.setAttribute('role', 'button');
+      thumb.setAttribute('tabindex', '0');
       thumb.title = `Snímek ${index + 1} / ${total}`;
       if (index === this.selectedIndex) thumb.classList.add('selected');
 
@@ -687,12 +688,19 @@ export class StopMotionController {
         this.moveFrame(from, target);
       });
 
-      thumb.addEventListener('click', () => {
+      const selectThis = () => {
         this.selectedIndex = index;
         this.renderStrip();
         this.updateOnion();
         this.updateAb();
         this.updateButtons();
+      };
+      thumb.addEventListener('click', selectThis);
+      thumb.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          selectThis();
+        }
       });
       thumb.addEventListener('dblclick', () => {
         void this.loadPoseForSelected();
