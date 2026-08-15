@@ -163,6 +163,9 @@ export class PuppetRenderer {
     pixiCanvas.style.top = '0';
     pixiCanvas.style.left = '0';
     pixiCanvas.style.zIndex = '1';
+    pixiCanvas.style.display = 'block';
+    pixiCanvas.style.opacity = '1';
+    pixiCanvas.style.visibility = 'visible';
     parentElement.appendChild(pixiCanvas);
 
     // Report rendering state once so a broken canvas layout can be diagnosed

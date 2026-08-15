@@ -100,6 +100,11 @@
         <!-- Status Banner -->
         <div id="status-banner" class="status-banner hidden"></div>
 
+        <!-- Temporary on-screen diagnostics (remove after the stage canvas is
+             verified visible). Shows the live stage canvas size/state so a
+             broken canvas layout can be reported without opening a console. -->
+        <div id="diag" style="position: fixed; top: 4px; right: 4px; z-index: 9999; background: rgba(0,0,0,0.85); color: #7ee787; font: 11px/1.45 ui-monospace, monospace; padding: 6px 9px; border: 1px solid #3a3f47; border-radius: 6px; pointer-events: none; white-space: pre;">diagnostika…</div>
+
         <!-- Stop-Motion Timeline Panel -->
         <section id="sm-panel" class="sm-panel hidden">
           <div class="sm-controls">
