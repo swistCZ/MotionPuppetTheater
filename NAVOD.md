@@ -75,7 +75,7 @@ Zapni **Stop-motion** — dole se objeví časová osa. Figurky se okamžitě zo
 - **← →** — přeřadí vybraný snímek doleva/doprava.
 - **Zpět / Vpřed** — vrací a obnovuje úpravy časové osy (až 50 kroků).
 - **Smazat vše** — smaže celou časovou osu (s potvrzením; lze vrátit Zpět).
-- **Přehrát** — přehraje snímky; **Smyčka** zapne/vypne opakování; **Od konce** přehrává od posledního snímku k prvnímu.
+- **Přehrát** — přehraje snímky; **Smyčka** zapne/vypne opakování; **Pozpátku** hraje od posledního snímku k prvnímu.
 - **FPS** — rychlost přehrávání (12 nebo 24).
 - **Onion** — průsvitný duch vybraného snímku pod živou scénou (pomáhá navazovat pózy).
 - **Duchů** — počet onion duchů (1–3); nejnovější duch je nejvýraznější.
