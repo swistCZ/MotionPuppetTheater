@@ -108,6 +108,18 @@
             <button id="sm-btn-export-gif" class="btn btn-secondary" title="Vyexportovat animaci jako GIF" disabled>GIF</button>
             <button id="sm-btn-export-zip" class="btn btn-secondary" title="Stáhnout snímky jako PNG v ZIP archivu" disabled>PNG (ZIP)</button>
           </div>
+          <div class="sm-controls">
+            <label class="compact-label">Pozadí:</label>
+            <button id="sm-btn-green" class="btn btn-secondary" title="Vyplnit scénu klíčovací zelenou (chroma)">Zelená</button>
+            <label class="file-upload-btn btn-secondary" title="Nahrát dlouhý pruh pozadí (posouvá se posuvníkem / krokem na snímek)">
+              Pruh
+              <input type="file" id="sm-upload-strip" accept="image/*" />
+            </label>
+            <button id="sm-btn-reset-bg" class="btn btn-secondary" title="Vrátit výchozí pozadí">Výchozí</button>
+            <input type="range" id="sm-pan" class="sm-pan-slider" min="0" max="4000" value="0" title="Ruční posun okna pruhu" disabled />
+            <label class="compact-label" for="sm-pan-step">Krok:</label>
+            <input type="number" id="sm-pan-step" class="sm-pan-step" value="0" min="0" step="1" title="Auto-posuv okna pruhu v px po každém uloženém snímku" />
+          </div>
           <div id="sm-frame-strip" class="sm-frame-strip"></div>
         </section>
       </main>

@@ -66,10 +66,10 @@
   * [x] Export **WebM/MP4** (MediaRecorder + `captureStream(0)`/`requestFrame()` on the playback overlay, records at the selected fps),
   * [x] Export **GIF** (via `gifenc`; frames quantized to 256 colors, capped at 1280px wide, per-frame delay from the fps),
   * [x] Export **PNG frames as ZIP** (via `fflate`; original-resolution PNGs).
-* **Phase 3 - Background (two independent choices):**
-  * **Full-frame chroma key green** (uniform `#00B140`) so the whole image can be keyed out and composited into another scene/video.
-  * **Long horizontal image strip** loaded by the user - a viewport window over it, panned manually via a slider or **auto-advancing a fixed step per captured frame** (parallax / camera-pan feel).
-  * Background picker: strip | keyable green | (default).
+* **Phase 3 - Background (DONE, two independent choices):**
+  * [x] **Full-frame chroma key green** (uniform `#00B140`, `Zelená` button) so the whole image can be keyed out and composited into another scene/video.
+  * [x] **Long horizontal image strip** (`Pruh` upload) rendered as a TilingSprite behind the puppets - a viewport window is visible, panned by a **manual slider** or **auto-advancing a fixed step per captured frame** (`Krok` input, applied after each Snímek via `onAfterSnap`).
+  * [x] Background reset (`Výchozí`) restores the default solid color.
 * **Phase 4 - Props / connected chains (leaves as first use-case):**
   * Generic prop system: a chain of N connected, differently-sized elements (e.g. a garland of leaves) attached to the tracked hand point, with secondary flutter motion. Generalizable to ribbons, beads, branches, etc.
 * **Additional ideas (deferred):**

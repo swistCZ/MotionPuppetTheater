@@ -23,6 +23,7 @@ export interface StopMotionElements {
   btnExportZip: HTMLButtonElement;
   fpsSelect: HTMLSelectElement;
   onStatus?: (message: string) => void;
+  onAfterSnap?: () => void;
 }
 
 const ONION_ALPHA = 0.4;
@@ -109,6 +110,7 @@ export class StopMotionController {
     this.renderStrip();
     this.updateOnion();
     this.updateButtons();
+    this.elements.onAfterSnap?.();
   }
 
   public deleteSelected(): void {

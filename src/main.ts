@@ -42,6 +42,9 @@ class AppManager {
   private isMotionFrozen: boolean = false;
   private stopMotionActive: boolean = false;
   private fistFreezeActive: boolean = false;
+  private smStripOffset: number = 0;
+  private smStripActive: boolean = false;
+  private advanceStripAfterSnap: () => void = () => {};
 
   // Real-time Display FPS Loop
   private lastFrameTime: number = performance.now();
@@ -93,6 +96,7 @@ class AppManager {
           this.showStatus(message);
           setTimeout(() => this.hideStatus(), 3000);
         },
+        onAfterSnap: () => this.advanceStripAfterSnap(),
       }
     );
 
@@ -431,6 +435,66 @@ class AppManager {
       }
       setTimeout(() => this.hideStatus(), 3000);
     });
+
+    // Stop-Motion background controls (chroma green / pan-able strip)
+    const smBtnGreen = document.getElementById('sm-btn-green') as HTMLButtonElement;
+    const smBtnResetBg = document.getElementById('sm-btn-reset-bg') as HTMLButtonElement;
+    const smUploadStrip = document.getElementById('sm-upload-strip') as HTMLInputElement;
+    const smPanSlider = document.getElementById('sm-pan') as HTMLInputElement;
+
+    const resetStripState = (): void => {
+      this.smStripActive = false;
+      this.smStripOffset = 0;
+      smPanSlider.value = '0';
+      smPanSlider.disabled = true;
+    };
+
+    smBtnGreen.addEventListener('click', () => {
+      resetStripState();
+      this.renderer.setBackgroundColor(0x00b140);
+      this.showStatus('Klíčovací zelená nastavena.');
+      setTimeout(() => this.hideStatus(), 2000);
+    });
+
+    smBtnResetBg.addEventListener('click', () => {
+      resetStripState();
+      this.renderer.clearStripBackground();
+      this.showStatus('Výchozí pozadí obnoveno.');
+      setTimeout(() => this.hideStatus(), 2000);
+    });
+
+    smUploadStrip.addEventListener('change', async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = async (evt) => {
+        const dataUrl = evt.target?.result as string;
+        if (!dataUrl) return;
+        this.smStripOffset = 0;
+        this.smStripActive = true;
+        smPanSlider.value = '0';
+        smPanSlider.disabled = false;
+        await this.renderer.setStripBackground(dataUrl);
+        this.showStatus('Pruh pozadí načten — posouvej posuvníkem nebo krokem na snímek.');
+        setTimeout(() => this.hideStatus(), 3000);
+      };
+      reader.readAsDataURL(file);
+      (e.target as HTMLInputElement).value = '';
+    });
+
+    smPanSlider.addEventListener('input', () => {
+      this.smStripOffset = parseInt(smPanSlider.value, 10) || 0;
+      this.renderer.setStripOffset(this.smStripOffset);
+    });
+
+    // Auto-advance the strip by the configured step after every captured frame.
+    this.advanceStripAfterSnap = (): void => {
+      const step = parseFloat((document.getElementById('sm-pan-step') as HTMLInputElement).value) || 0;
+      if (!this.smStripActive || step <= 0) return;
+      this.smStripOffset += step;
+      smPanSlider.value = String(this.smStripOffset);
+      this.renderer.setStripOffset(this.smStripOffset);
+    };
 
     // Preset Selection
     selectLeftPuppet.addEventListener('change', async (e) => {

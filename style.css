@@ -351,6 +351,27 @@ body {
   box-shadow: 0 0 8px rgba(88, 166, 255, 0.5);
 }
 
+.sm-pan-slider {
+  width: 140px;
+  accent-color: var(--accent-blue);
+}
+
+.sm-pan-step {
+  width: 64px;
+  height: 32px;
+  padding: 6px 8px;
+  background-color: rgba(22, 27, 34, 0.85);
+  color: var(--text-light);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  font-size: 0.82rem;
+  outline: none;
+}
+
+.sm-pan-step:focus {
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
 .debug-overlay {
   position: absolute;
   top: 0;

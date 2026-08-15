@@ -1,4 +1,4 @@
-import { Application, Container, Sprite, Graphics, Assets, Texture, Text, TextStyle, FederatedPointerEvent } from 'pixi.js';
+import { Application, Container, Sprite, Graphics, Assets, Texture, Text, TextStyle, FederatedPointerEvent, TilingSprite } from 'pixi.js';
 import { HandState, clamp, shortestAngleDelta, spreadFactor, Point2D } from './gestures';
 import { CutoutRigConfig, armRotation } from './rig';
 import { RigRenderParts, buildRigParts, fetchRigConfig, loadLocalCharacterConfig } from './rigAssets';
@@ -75,6 +75,7 @@ export class PuppetRenderer {
   // Background
   private bgGraphics: Graphics;
   private bgSprite: Sprite | null = null;
+  private bgTiling: TilingSprite | null = null;
   private currentBgColorHex: number = 0x2d3748;
 
   // Motion Freeze
@@ -163,6 +164,9 @@ export class PuppetRenderer {
     if (this.bgSprite && this.bgSprite.visible) {
       this.bgSprite.width = this.width;
       this.bgSprite.height = this.height;
+    } else if (this.bgTiling && this.bgTiling.visible) {
+      this.bgTiling.width = this.width;
+      this.bgTiling.height = this.height;
     } else {
       this.drawDefaultBackground(this.currentBgColorHex);
     }
@@ -349,7 +353,59 @@ export class PuppetRenderer {
     if (this.bgSprite) {
       this.bgSprite.visible = false;
     }
+    if (this.bgTiling) {
+      this.bgTiling.visible = false;
+    }
     this.drawDefaultBackground(colorHex);
+  }
+
+  /**
+   * Shows a long horizontal background image as a pan-able strip (TilingSprite
+   * so it scrolls seamlessly). Only a viewport window of the stage width is
+   * visible; call `setStripOffset` to pan it left/right.
+   */
+  public async setStripBackground(dataUrl: string): Promise<void> {
+    try {
+      let texture: Texture;
+      try {
+        texture = await Assets.load(dataUrl);
+      } catch {
+        texture = Texture.from(dataUrl);
+      }
+
+      if (!this.bgTiling) {
+        this.bgTiling = new TilingSprite({ texture, width: this.width, height: this.height });
+        this.app.stage.addChildAt(this.bgTiling, 0);
+      } else {
+        this.bgTiling.texture = texture;
+      }
+
+      this.bgTiling.width = this.width;
+      this.bgTiling.height = this.height;
+      this.bgTiling.tilePosition.x = 0;
+      this.bgTiling.visible = true;
+      this.bgGraphics.clear();
+      if (this.bgSprite) this.bgSprite.visible = false;
+    } catch (err) {
+      console.error('Failed to load strip background image:', err);
+    }
+  }
+
+  /** Pans the visible window of the strip background by `offsetX` pixels. */
+  public setStripOffset(offsetX: number): void {
+    if (this.bgTiling && this.bgTiling.visible) {
+      this.bgTiling.tilePosition.x = -offsetX;
+    }
+  }
+
+  public isStripActive(): boolean {
+    return !!this.bgTiling && this.bgTiling.visible;
+  }
+
+  /** Hides the strip and restores the default solid background. */
+  public clearStripBackground(): void {
+    if (this.bgTiling) this.bgTiling.visible = false;
+    this.drawDefaultBackground(this.currentBgColorHex);
   }
 
   public async setCustomBackgroundDataUrl(dataUrl: string): Promise<void> {
