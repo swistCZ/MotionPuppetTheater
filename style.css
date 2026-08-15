@@ -147,17 +147,6 @@ body {
   transform: scale(0.97);
 }
 
-.btn-primary {
-  background-color: var(--accent-blue);
-  color: #0b0c10;
-  border-color: transparent;
-  box-shadow: 0 0 12px rgba(88, 166, 255, 0.3);
-}
-
-.btn-primary:hover {
-  background-color: #79c0ff;
-}
-
 .btn-secondary {
   background-color: rgba(255, 255, 255, 0.06);
   color: var(--text-light);
@@ -168,14 +157,27 @@ body {
   border-color: rgba(255, 255, 255, 0.25);
 }
 
-.btn-danger {
+/* Primary/danger MUST come after secondary and use .btn.btn-* so a toggle
+   that keeps both classes (btn-secondary btn-primary) still looks ON. */
+.btn.btn-primary {
+  background-color: var(--accent-blue);
+  color: #0b0c10;
+  border-color: transparent;
+  box-shadow: 0 0 12px rgba(88, 166, 255, 0.45);
+}
+
+.btn.btn-primary:hover {
+  background-color: #79c0ff;
+}
+
+.btn.btn-danger {
   background-color: var(--accent-red);
   color: #ffffff;
   border-color: transparent;
   box-shadow: 0 0 12px rgba(248, 81, 73, 0.4);
 }
 
-.btn-danger:hover {
+.btn.btn-danger:hover {
   background-color: #ff6e67;
 }
 

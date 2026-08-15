@@ -34,6 +34,10 @@ export interface StopMotionElements {
   onStatus?: (message: string) => void;
   onAfterSnap?: () => void;
   audioSource?: () => MediaStreamAudioDestinationNode | undefined;
+  /** Hide/show stop-motion edit handles around a capture. */
+  setHandlesVisible?: (visible: boolean) => void;
+  /** Force a Pixi present so toDataURL sees the latest frame. */
+  renderNow?: () => void;
 }
 
 const ONION_ALPHA = 0.4;
@@ -176,8 +180,13 @@ export class StopMotionController {
 
   public snapFrame(): void {
     this.recordHistory();
+    // Hide edit handles for the capture so the rings never appear in a frame.
+    this.elements.setHandlesVisible?.(false);
     const canvas = this.canvasSource();
+    // Force a fresh WebGL present so toDataURL sees the frame without handles.
+    this.elements.renderNow?.();
     const dataUrl = canvas.toDataURL('image/png');
+    this.elements.setHandlesVisible?.(true);
     const id = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}`;
     this.frames.push({ id, dataUrl });
     this.selectedIndex = this.frames.length - 1;

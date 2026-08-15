@@ -1,8 +1,10 @@
-import { Application, Container, Sprite, Graphics, Assets, Texture, Text, TextStyle, FederatedPointerEvent, TilingSprite } from 'pixi.js';
+import { Application, Container, Sprite, Graphics, Assets, Texture, Text, TextStyle, FederatedPointerEvent, TilingSprite, Rectangle } from 'pixi.js';
 import { HandState, clamp, shortestAngleDelta, spreadFactor, Point2D } from './gestures';
 import { CutoutRigConfig, armRotation } from './rig';
 import { RigRenderParts, buildRigParts, fetchRigConfig, loadLocalCharacterConfig } from './rigAssets';
 import { ChainProp } from './chainProp';
+
+const HANDLE_R = 14;
 
 export type PuppetPreset = 'fox' | 'robot' | 'custom' | 'none' | `rig:${string}`;
 
@@ -39,6 +41,9 @@ interface DynamicPuppet {
   /** Manual mouse overrides for procedural parts (stop-motion framing). A real
    * hand frame clears them so the hands drive the puppet again. */
   manualPose?: Partial<Record<RigPartKey, Point2D>>;
+  /** Visible grab handles for stop-motion mouse posing (not captured in snaps). */
+  editHandles?: Container;
+  handleByPart?: Partial<Record<RigPartKey, Graphics>>;
 }
 
 type RigPartKey = 'body' | 'leftArm' | 'rightArm' | 'leftLeg' | 'rightLeg' | 'head';
@@ -103,11 +108,11 @@ export class PuppetRenderer {
   // Chain prop (e.g. a garland of leaves) following the tracked hand.
   private chainProp!: ChainProp;
 
-  // Manual pose editing (stop-motion fine-tuning): drag rig parts directly.
+  // Manual pose editing (stop-motion fine-tuning): drag via visible handles.
   private poseEditing: boolean = false;
-  private dragInfo: Map<Sprite, PartDragInfo> = new Map();
-  private procDragTargets: Map<Container, PartDragInfo> = new Map();
+  private dragInfo: Map<Container, PartDragInfo> = new Map();
   private activeDrag: ActiveDrag | null = null;
+  private handlesVisible: boolean = true;
 
   private width: number;
   private height: number;
@@ -140,6 +145,11 @@ export class PuppetRenderer {
 
   public getCanvasElement(): HTMLCanvasElement {
     return this.app.canvas as HTMLCanvasElement;
+  }
+
+  /** Forces a single present of the current scene (used before toDataURL). */
+  public renderNow(): void {
+    this.app.renderer.render(this.app.stage);
   }
 
   public async initialize(parentElement: HTMLElement): Promise<void> {
@@ -227,6 +237,9 @@ export class PuppetRenderer {
     this.width = width;
     this.height = height;
     this.app.renderer.resize(width, height);
+    if (this.poseEditing) {
+      this.app.stage.hitArea = new Rectangle(0, 0, this.width, this.height);
+    }
 
     if (this.bgSprite && this.bgSprite.visible) {
       this.bgSprite.width = this.width;
@@ -328,217 +341,289 @@ export class PuppetRenderer {
    * whole puppet. While a part is being dragged the auto pose update for that
    * puppet is suspended so the drag is never overwritten by hand input.
    */
+  /**
+   * Hide/show the edit handles (called around snapFrame so the rings never
+   * appear in a captured frame).
+   */
+  public setEditHandlesVisible(visible: boolean): void {
+    this.handlesVisible = visible;
+    for (const puppet of [this.leftPuppet, this.rightPuppet]) {
+      if (puppet.editHandles) puppet.editHandles.visible = visible && this.poseEditing;
+    }
+  }
+
   public setPoseEditing(enabled: boolean): void {
     this.poseEditing = enabled;
     this.dragInfo.clear();
+    this.endDrag();
 
     for (const puppet of [this.leftPuppet, this.rightPuppet]) {
       this.setupPoseEditingForPuppet(puppet, enabled);
     }
 
+    // Full-stage hit area so pointer events keep firing while the cursor moves
+    // off a small handle. Without this, drag often dies after a few pixels.
+    this.app.stage.eventMode = enabled ? 'static' : 'auto';
+    this.app.stage.hitArea = enabled ? new Rectangle(0, 0, this.width, this.height) : null;
+    this.app.stage.interactiveChildren = true;
+
     if (enabled) {
-      this.app.stage.eventMode = 'static';
       this.app.stage.on('pointermove', this.onStagePointerMove);
       this.app.stage.on('pointerup', this.onStagePointerUp);
       this.app.stage.on('pointerupoutside', this.onStagePointerUp);
+      // Window listeners keep the drag alive even if the pointer leaves the canvas.
+      window.addEventListener('pointermove', this.onWindowPointerMove);
+      window.addEventListener('pointerup', this.onWindowPointerUp);
     } else {
       this.app.stage.off('pointermove', this.onStagePointerMove);
       this.app.stage.off('pointerup', this.onStagePointerUp);
       this.app.stage.off('pointerupoutside', this.onStagePointerUp);
-      this.endDrag();
+      window.removeEventListener('pointermove', this.onWindowPointerMove);
+      window.removeEventListener('pointerup', this.onWindowPointerUp);
     }
   }
 
-  /** Adds or removes the drag interactivity for one puppet. Used both by
-   * setPoseEditing and by the puppet (re)build paths so a puppet switched in
-   * while stop-motion is active is immediately draggable (fresh rig sprites
-   * would otherwise have no event handlers). */
+  /** Builds (or tears down) the visible grab-handle overlay for one puppet. */
   private setupPoseEditingForPuppet(puppet: DynamicPuppet, enabled: boolean): void {
+    if (puppet.editHandles) {
+      puppet.editHandles.destroy({ children: true });
+      puppet.editHandles = undefined;
+      puppet.handleByPart = undefined;
+    }
+    if (!enabled || puppet.preset === 'none') return;
+
+    const handles = new Container();
+    handles.eventMode = 'static';
+    handles.interactiveChildren = true;
+    const byPart: Partial<Record<RigPartKey, Graphics>> = {};
+
+    const parts: RigPartKey[] = puppet.rig
+      ? (['body', 'head', 'leftArm', 'rightArm', 'leftLeg', 'rightLeg'] as RigPartKey[]).filter((p) => {
+          if (p === 'body') return true;
+          if (p === 'head') return !!puppet.rig!.parts.headSprite && !!puppet.rig!.config.parts.head?.movable;
+          if (p === 'leftArm') return !!puppet.rig!.config.parts.leftArm.movable;
+          if (p === 'rightArm') return !!puppet.rig!.config.parts.rightArm.movable;
+          if (p === 'leftLeg') return !!puppet.rig!.parts.leftLegSprite && !!puppet.rig!.config.parts.leftLeg?.movable;
+          if (p === 'rightLeg') return !!puppet.rig!.parts.rightLegSprite && !!puppet.rig!.config.parts.rightLeg?.movable;
+          return false;
+        })
+      : puppet.preset === 'custom'
+        ? (['body'] as RigPartKey[])
+        : (['body', 'head', 'leftArm', 'rightArm', 'leftLeg', 'rightLeg'] as RigPartKey[]);
+
+    for (const part of parts) {
+      const g = this.makeHandle(part === 'body' ? 0x58a6ff : 0x7ee787);
+      this.dragInfo.set(g, { puppet, part });
+      g.on('pointerdown', this.onHandlePointerDown);
+      handles.addChild(g);
+      byPart[part] = g;
+    }
+
+    puppet.editHandles = handles;
+    puppet.handleByPart = byPart;
+    // Topmost so handles always win hit-tests over the puppet sprites.
+    puppet.container.addChild(handles);
+    handles.visible = this.handlesVisible;
+    this.layoutHandles(puppet);
+  }
+
+  private makeHandle(color: number): Graphics {
+    const g = new Graphics();
+    g.circle(0, 0, HANDLE_R).fill({ color, alpha: 0.85 }).stroke({ width: 2, color: 0xffffff, alpha: 0.95 });
+    g.eventMode = 'static';
+    g.cursor = 'grab';
+    g.hitArea = new Rectangle(-HANDLE_R - 4, -HANDLE_R - 4, (HANDLE_R + 4) * 2, (HANDLE_R + 4) * 2);
+    return g;
+  }
+
+  /** Places each handle at the current joint / body / limb endpoint. */
+  private layoutHandles(puppet: DynamicPuppet): void {
+    const by = puppet.handleByPart;
+    if (!by) return;
+
+    if (by.body) by.body.position.set(0, 0);
+
     if (puppet.rig) {
       const { parts, config } = puppet.rig;
-
-      const entries: Array<{ sprite?: Sprite; part: RigPartKey; movable: boolean }> = [
-        { sprite: parts.bodySprite, part: 'body', movable: true },
-        { sprite: parts.leftArmSprite, part: 'leftArm', movable: !!config.parts.leftArm.movable },
-        { sprite: parts.rightArmSprite, part: 'rightArm', movable: !!config.parts.rightArm.movable },
-        { sprite: parts.leftLegSprite, part: 'leftLeg', movable: !!config.parts.leftLeg?.movable },
-        { sprite: parts.rightLegSprite, part: 'rightLeg', movable: !!config.parts.rightLeg?.movable },
-        { sprite: parts.headSprite, part: 'head', movable: !!config.parts.head?.movable },
-      ];
-
-      for (const entry of entries) {
-        if (!entry.sprite) continue;
-        const sprite = entry.sprite;
-        sprite.eventMode = enabled && entry.movable ? 'static' : 'none';
-        sprite.cursor = enabled && entry.movable ? 'pointer' : 'default';
-        if (enabled) {
-          this.dragInfo.set(sprite, { puppet, part: entry.part });
-          sprite.on('pointerdown', this.onPartPointerDown);
-        } else {
-          sprite.off('pointerdown', this.onPartPointerDown);
-        }
+      const bw = parts.bodySprite.texture.width;
+      const bh = parts.bodySprite.texture.height;
+      if (by.head && parts.headContainer) {
+        by.head.position.copyFrom(parts.headContainer.position);
+      }
+      if (by.leftArm) {
+        const s = config.body.shoulderL;
+        by.leftArm.position.set(s.x - bw / 2, s.y - bh / 2);
+      }
+      if (by.rightArm) {
+        const s = config.body.shoulderR;
+        by.rightArm.position.set(s.x - bw / 2, s.y - bh / 2);
+      }
+      if (by.leftLeg && parts.leftLegContainer) {
+        by.leftLeg.position.copyFrom(parts.leftLegContainer.position);
+      } else if (by.leftLeg) {
+        const hip = config.body.hipL ?? { x: bw * 0.38, y: bh * 0.85 };
+        by.leftLeg.position.set(hip.x - bw / 2, hip.y - bh / 2);
+      }
+      if (by.rightLeg && parts.rightLegContainer) {
+        by.rightLeg.position.copyFrom(parts.rightLegContainer.position);
+      } else if (by.rightLeg) {
+        const hip = config.body.hipR ?? { x: bw * 0.62, y: bh * 0.85 };
+        by.rightLeg.position.set(hip.x - bw / 2, hip.y - bh / 2);
       }
       return;
     }
 
-    // Procedural puppets (fox/robot/custom): make every part draggable with
-    // the mouse so stop-motion framing works without camera/gesture input.
-    const procTargets: Array<{ target: Container; part: RigPartKey }> = [
-      { target: puppet.torso, part: 'body' },
-      { target: puppet.headGraphic, part: 'head' },
-      { target: puppet.leftArm, part: 'leftArm' },
-      { target: puppet.rightArm, part: 'rightArm' },
-      { target: puppet.leftLeg, part: 'leftLeg' },
-      { target: puppet.rightLeg, part: 'rightLeg' },
-    ];
-    if (puppet.preset === 'custom' && puppet.customSpriteClosed) {
-      procTargets.push({ target: puppet.customSpriteClosed, part: 'body' });
-      if (puppet.customSpriteOpen) procTargets.push({ target: puppet.customSpriteOpen, part: 'body' });
-    }
-    for (const { target, part } of procTargets) {
-      target.eventMode = enabled ? 'static' : 'none';
-      target.cursor = enabled ? 'pointer' : 'default';
-      if (enabled) {
-        this.procDragTargets.set(target, { puppet, part });
-        target.on('pointerdown', this.onProcPartPointerDown);
-      } else {
-        this.procDragTargets.delete(target);
-        target.off('pointerdown', this.onProcPartPointerDown);
-      }
-    }
+    // Procedural: body center, head center, limb endpoints from manual/hand pose.
+    if (by.head) by.head.position.copyFrom(puppet.headContainer.position);
+    const state = this.getLastHandStateForPuppet(puppet);
+    const manual = puppet.manualPose ?? {};
+    const spread = state ? spreadFactor(state.fingerSplay) : 1;
+    const end = (part: 'leftArm' | 'rightArm' | 'leftLeg' | 'rightLeg'): Point2D => {
+      if (manual[part]) return manual[part]!;
+      if (state) return { x: state.limbs[part].x * spread, y: state.limbs[part].y * spread };
+      if (part === 'leftArm') return { x: -60, y: 10 };
+      if (part === 'rightArm') return { x: 60, y: 10 };
+      if (part === 'leftLeg') return { x: -22, y: 62 };
+      return { x: 22, y: 62 };
+    };
+    if (by.leftArm) by.leftArm.position.set(end('leftArm').x, end('leftArm').y);
+    if (by.rightArm) by.rightArm.position.set(end('rightArm').x, end('rightArm').y);
+    if (by.leftLeg) by.leftLeg.position.set(end('leftLeg').x, end('leftLeg').y);
+    if (by.rightLeg) by.rightLeg.position.set(end('rightLeg').x, end('rightLeg').y);
   }
 
-  /** Re-poses and re-enables dragging for a puppet that was just (re)built
-   * while pose editing is active. A freshly built rig has every part at its
-   * container origin - without a fresh pose the arms look "collapsed" until a
-   * hand state arrives, so apply the stored state (or a neutral resting pose). */
+  /** Re-poses and rebuilds handles for a puppet that was just (re)built while
+   * pose editing is active. */
   private refreshPosedPuppet(puppet: DynamicPuppet): void {
-    this.setupPoseEditingForPuppet(puppet, true);
     const state = this.getLastHandStateForPuppet(puppet);
     if (state) {
-      this.updateHandState(state);
+      this.updateHandState(state, true);
     } else {
       this.posePuppetNeutral(puppet, this.width * 0.35, this.height * 0.62);
     }
+    if (this.poseEditing) this.setupPoseEditingForPuppet(puppet, true);
   }
 
-  private onPartPointerDown = (e: FederatedPointerEvent): void => {
+  private onHandlePointerDown = (e: FederatedPointerEvent): void => {
     if (!this.poseEditing) return;
-    const sprite = e.currentTarget as Sprite;
-    const info = this.dragInfo.get(sprite);
-    if (!info) return;
-
-    if (info.part === 'body') {
-      this.activeDrag = {
-        puppet: info.puppet,
-        part: info.part,
-        startPointer: { x: e.global.x, y: e.global.y },
-        startRotation: 0,
-        startContainerPos: { x: info.puppet.container.position.x, y: info.puppet.container.position.y },
-        jointGlobal: { x: 0, y: 0 },
-      };
-    } else {
-      const joint = sprite.getGlobalPosition();
-      this.activeDrag = {
-        puppet: info.puppet,
-        part: info.part,
-        sprite,
-        startPointer: { x: e.global.x, y: e.global.y },
-        startRotation: sprite.rotation,
-        startContainerPos: { x: info.puppet.container.position.x, y: info.puppet.container.position.y },
-        jointGlobal: { x: joint.x, y: joint.y },
-      };
-    }
-  };
-
-  private onProcPartPointerDown = (e: FederatedPointerEvent): void => {
-    if (!this.poseEditing) return;
+    e.stopPropagation();
     const target = e.currentTarget as Container;
-    const info = this.procDragTargets.get(target);
+    const info = this.dragInfo.get(target);
     if (!info) return;
 
     const puppet = info.puppet;
-    const isBody = info.part === 'body';
+    const global = { x: e.global.x, y: e.global.y };
     this.activeDrag = {
       puppet,
       part: info.part,
-      startPointer: { x: e.global.x, y: e.global.y },
+      startPointer: global,
       startRotation: 0,
       startContainerPos: { x: puppet.container.position.x, y: puppet.container.position.y },
       jointGlobal: { x: 0, y: 0 },
-      startLocal: isBody ? undefined : puppet.container.toLocal({ x: e.global.x, y: e.global.y }),
-      procedural: true,
+      procedural: !puppet.rig,
     };
+    if (target instanceof Graphics) target.cursor = 'grabbing';
   };
 
+  private globalFromEvent(e: FederatedPointerEvent | PointerEvent): Point2D {
+    if ('global' in e && e.global) return { x: e.global.x, y: e.global.y };
+    // Window pointer events: convert client coords into Pixi global space.
+    const canvas = this.app.canvas as HTMLCanvasElement;
+    const rect = canvas.getBoundingClientRect();
+    const pe = e as PointerEvent;
+    const sx = (pe.clientX - rect.left) * (this.width / Math.max(1, rect.width));
+    const sy = (pe.clientY - rect.top) * (this.height / Math.max(1, rect.height));
+    return { x: sx, y: sy };
+  }
+
   private onStagePointerMove = (e: FederatedPointerEvent): void => {
+    this.applyDragAt(this.globalFromEvent(e));
+  };
+
+  private onWindowPointerMove = (e: PointerEvent): void => {
+    if (!this.activeDrag) return;
+    this.applyDragAt(this.globalFromEvent(e));
+  };
+
+  private onStagePointerUp = (): void => {
+    this.endDrag();
+  };
+
+  private onWindowPointerUp = (): void => {
+    this.endDrag();
+  };
+
+  private applyDragAt(global: Point2D): void {
     const drag = this.activeDrag;
     if (!drag) return;
+    const puppet = drag.puppet;
 
     if (drag.part === 'body') {
-      // Convert the pointer delta into world (zoom-corrected) space so the
-      // puppet stays under the cursor even while the stage is zoomed.
       const startWorld = this.worldContainer.toLocal({ x: drag.startPointer.x, y: drag.startPointer.y });
-      const nowWorld = this.worldContainer.toLocal({ x: e.global.x, y: e.global.y });
-      drag.puppet.container.position.set(
+      const nowWorld = this.worldContainer.toLocal({ x: global.x, y: global.y });
+      puppet.container.position.set(
         drag.startContainerPos.x + (nowWorld.x - startWorld.x),
         drag.startContainerPos.y + (nowWorld.y - startWorld.y)
       );
       return;
     }
 
-    if (drag.procedural) {
-      const puppet = drag.puppet;
-      const local = puppet.container.toLocal({ x: e.global.x, y: e.global.y });
-      if (!puppet.manualPose) puppet.manualPose = {};
+    if (puppet.rig) {
+      const { config, parts } = puppet.rig;
       if (drag.part === 'head') {
-        puppet.headContainer.position.set(local.x, local.y);
-        puppet.manualPose.head = { x: local.x, y: local.y };
+        if (parts.headContainer) {
+          const headPos = puppet.container.toLocal({ x: global.x, y: global.y });
+          parts.headContainer.position.set(headPos.x, headPos.y);
+          if (puppet.handleByPart?.head) puppet.handleByPart.head.position.copyFrom(parts.headContainer.position);
+        }
         return;
       }
-      if (drag.part === 'leftArm' || drag.part === 'rightArm' || drag.part === 'leftLeg' || drag.part === 'rightLeg') {
-        puppet.manualPose[drag.part] = { x: local.x, y: local.y };
-        this.renderProceduralPuppet(puppet);
-      }
+      const jointContainer =
+        drag.part === 'leftArm'
+          ? parts.leftArmContainer
+          : drag.part === 'rightArm'
+            ? parts.rightArmContainer
+            : drag.part === 'leftLeg'
+              ? parts.leftLegContainer
+              : parts.rightLegContainer;
+      const sprite =
+        drag.part === 'leftArm'
+          ? parts.leftArmSprite
+          : drag.part === 'rightArm'
+            ? parts.rightArmSprite
+            : drag.part === 'leftLeg'
+              ? parts.leftLegSprite
+              : parts.rightLegSprite;
+      if (!jointContainer || !sprite) return;
+      const local = jointContainer.toLocal({ x: global.x, y: global.y });
+      const rest =
+        drag.part === 'leftArm'
+          ? config.leftArm.restHandAngle
+          : drag.part === 'rightArm'
+            ? config.rightArm.restHandAngle
+            : drag.part === 'leftLeg'
+              ? (config.leftLeg?.restAngle ?? 0) + Math.PI / 2
+              : (config.rightLeg?.restAngle ?? 0) + Math.PI / 2;
+      sprite.rotation = armRotation(local, rest, puppet.rig.maxArmDelta);
       return;
     }
 
-    if (!drag.sprite) return;
-    const puppet = drag.puppet;
-    const rig = puppet.rig;
-    if (!rig) return;
-
-    // Cut-out rig: mouse dragging poses a limb the same way the live hand
-    // does - the hand/foot follows the cursor around its joint (shoulder/hip),
-    // and the head follows the cursor. This is far less surprising than
-    // rotating the sprite around an invisible pivot.
-    const { config, parts } = rig;
+    // Procedural / custom PNG
+    const local = puppet.container.toLocal({ x: global.x, y: global.y });
+    if (!puppet.manualPose) puppet.manualPose = {};
     if (drag.part === 'head') {
-      if (parts.headContainer) {
-        const headPos = puppet.container.toLocal({ x: e.global.x, y: e.global.y });
-        parts.headContainer.position.set(headPos.x, headPos.y);
-      }
+      puppet.headContainer.position.set(local.x, local.y);
+      puppet.manualPose.head = { x: local.x, y: local.y };
+      if (puppet.handleByPart?.head) puppet.handleByPart.head.position.set(local.x, local.y);
       return;
     }
-
-    const parent = drag.sprite.parent as Container;
-    const local = parent.toLocal({ x: e.global.x, y: e.global.y });
-    // Leg sprites hang straight down at rotation 0 (restAngle is an offset),
-    // so their "pointing direction" is restAngle + 90 deg in atan2 terms.
-    const rest =
-      drag.part === 'leftArm'
-        ? config.leftArm.restHandAngle
-        : drag.part === 'rightArm'
-          ? config.rightArm.restHandAngle
-          : drag.part === 'leftLeg'
-            ? (config.leftLeg?.restAngle ?? 0) + Math.PI / 2
-            : (config.rightLeg?.restAngle ?? 0) + Math.PI / 2;
-    drag.sprite.rotation = armRotation(local, rest, rig.maxArmDelta);
-  };
-
-  private onStagePointerUp = (): void => {
-    this.endDrag();
-  };
+    if (drag.part === 'leftArm' || drag.part === 'rightArm' || drag.part === 'leftLeg' || drag.part === 'rightLeg') {
+      puppet.manualPose[drag.part] = { x: local.x, y: local.y };
+      this.renderProceduralPuppet(puppet);
+      const h = puppet.handleByPart?.[drag.part];
+      if (h) h.position.set(local.x, local.y);
+    }
+  }
 
   private endDrag(): void {
     this.activeDrag = null;
@@ -817,13 +902,18 @@ export class PuppetRenderer {
     }
   }
 
-  public updateHandState(state: HandState): void {
+  public updateHandState(state: HandState, force = false): void {
     const isLeft = state.handType === 'Left';
     const puppet = isLeft ? this.leftPuppet : this.rightPuppet;
 
     if (!puppet.container) return;
 
-    if (this.isFrozen || !this.handFollowEnabled) return;
+    // force=true is used for synthetic resting poses (stop-motion entry /
+    // puppet rebuild) so the puppet still poses when Ruka is off.
+    if (!force && (this.isFrozen || !this.handFollowEnabled)) return;
+
+    // A live mouse drag on this puppet must win over the hand frame.
+    if (this.activeDrag && this.activeDrag.puppet === puppet) return;
 
     if (isLeft) this.lastLeftState = state;
     else this.lastRightState = state;
@@ -833,6 +923,8 @@ export class PuppetRenderer {
 
     // Smooth position update for Torso center
     puppet.container.position.set(state.smoothedPosition.x, state.smoothedPosition.y);
+    // Handles stay glued to joints/endpoints while the hand drives the pose.
+    if (this.poseEditing) this.layoutHandles(puppet);
 
     // Mild in-plane rotation (hand upright = 0), damped + EMA smoothed.
     const targetRot = state.rotation - ROT_BASE;
@@ -981,7 +1073,7 @@ export class PuppetRenderer {
     };
     if (puppet === this.leftPuppet) this.lastLeftState = neutral;
     else this.lastRightState = neutral;
-    this.updateHandState(neutral);
+    this.updateHandState(neutral, true);
   }
 
   public async setCustomPuppetDataUrl(handType: 'Left' | 'Right', dataUrl: string): Promise<void> {

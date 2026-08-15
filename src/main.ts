@@ -118,6 +118,8 @@ class AppManager {
           setTimeout(() => this.hideStatus(), 3000);
         },
         onAfterSnap: () => this.advanceStripAfterSnap(),
+        setHandlesVisible: (visible: boolean) => this.renderer.setEditHandlesVisible(visible),
+        renderNow: () => this.renderer.renderNow(),
       }
     );
 
@@ -505,7 +507,7 @@ class AppManager {
         // The bottom panel owns the background controls while in this mode,
         // so hide the duplicated top-bar scene group.
         sceneGroup.classList.add('hidden');
-        this.showStatus('Stop-motion: pěst = zamknutí pózy, prostředníček = zoom, tažením myší doladíš díly, Snímek = uložit.');
+        this.showStatus('Stop-motion: modré kroužky = chytací body (tělo = posun, zelené = končetiny/hlava). Snímek = uložit.');
       } else {
         btnStopMotion.textContent = 'Stop-motion';
         btnStopMotion.classList.remove('btn-primary');

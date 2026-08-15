@@ -129,15 +129,20 @@ export function removeBackgroundPixels(canvas: HTMLCanvasElement, tolerance: num
 }
 
 /**
- * Computes a hit area matching the sprite's opaque pixels (plus a margin), so
- * dragging/clicking only reacts on the visible part image instead of the whole
- * (often transparent-padded) texture. Falls back to the full bounds when the
- * pixels cannot be read.
+ * Computes a hit area matching the sprite's opaque pixels (plus a margin), in
+ * the sprite's LOCAL coordinates (origin at the anchor point). Texture-pixel
+ * bounds alone are wrong for any non-zero anchor and make the torso
+ * unclickable. Falls back to the full texture when pixels cannot be read.
  */
-export function computeOpaqueBounds(texture: Texture, margin = 6): Rectangle {
+export function computeOpaqueBounds(
+  texture: Texture,
+  anchorX = 0.5,
+  anchorY = 0.5,
+  margin = 8
+): Rectangle {
   const w = texture.width;
   const h = texture.height;
-  if (w <= 0 || h <= 0) return new Rectangle(0, 0, w, h);
+  if (w <= 0 || h <= 0) return new Rectangle(-w * anchorX, -h * anchorY, w, h);
 
   const resource = texture.source.resource;
   let canvas: HTMLCanvasElement | null = null;
@@ -150,16 +155,16 @@ export function computeOpaqueBounds(texture: Texture, margin = 6): Rectangle {
     const drawCtx = canvas.getContext('2d');
     if (drawCtx) drawCtx.drawImage(resource, 0, 0);
   }
-  if (!canvas) return new Rectangle(0, 0, w, h);
+  if (!canvas) return new Rectangle(-w * anchorX, -h * anchorY, w, h);
 
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  if (!ctx) return new Rectangle(0, 0, w, h);
+  if (!ctx) return new Rectangle(-w * anchorX, -h * anchorY, w, h);
 
   let data: Uint8ClampedArray;
   try {
     data = ctx.getImageData(0, 0, w, h).data;
   } catch {
-    return new Rectangle(0, 0, w, h);
+    return new Rectangle(-w * anchorX, -h * anchorY, w, h);
   }
 
   let minX = w;
@@ -176,11 +181,14 @@ export function computeOpaqueBounds(texture: Texture, margin = 6): Rectangle {
       }
     }
   }
-  if (maxX < 0) return new Rectangle(0, 0, w, h);
+  if (maxX < 0) return new Rectangle(-w * anchorX, -h * anchorY, w, h);
 
   const x0 = Math.max(0, minX - margin);
   const y0 = Math.max(0, minY - margin);
-  return new Rectangle(x0, y0, Math.min(w, maxX + 1 + margin) - x0, Math.min(h, maxY + 1 + margin) - y0);
+  const x1 = Math.min(w, maxX + 1 + margin);
+  const y1 = Math.min(h, maxY + 1 + margin);
+  // Convert texture-pixel bounds into sprite-local coords (origin = anchor).
+  return new Rectangle(x0 - w * anchorX, y0 - h * anchorY, x1 - x0, y1 - y0);
 }
 
 /**
@@ -197,17 +205,21 @@ export async function buildRigParts(config: CutoutRigConfig): Promise<RigRenderP
 
   const bodySprite = new Sprite(bodyTexture);
   bodySprite.anchor.set(0.5, 0.5);
-  bodySprite.hitArea = computeOpaqueBounds(bodyTexture);
+  bodySprite.hitArea = computeOpaqueBounds(bodyTexture, 0.5, 0.5);
 
   const leftArmSprite = new Sprite(leftTexture);
-  leftArmSprite.anchor.set(config.leftArm.pivot.x / leftTexture.width, config.leftArm.pivot.y / leftTexture.height);
+  const leftAx = config.leftArm.pivot.x / leftTexture.width;
+  const leftAy = config.leftArm.pivot.y / leftTexture.height;
+  leftArmSprite.anchor.set(leftAx, leftAy);
   leftArmSprite.rotation = config.leftArm.restHandAngle;
-  leftArmSprite.hitArea = computeOpaqueBounds(leftTexture);
+  leftArmSprite.hitArea = computeOpaqueBounds(leftTexture, leftAx, leftAy);
 
   const rightArmSprite = new Sprite(rightTexture);
-  rightArmSprite.anchor.set(config.rightArm.pivot.x / rightTexture.width, config.rightArm.pivot.y / rightTexture.height);
+  const rightAx = config.rightArm.pivot.x / rightTexture.width;
+  const rightAy = config.rightArm.pivot.y / rightTexture.height;
+  rightArmSprite.anchor.set(rightAx, rightAy);
   rightArmSprite.rotation = config.rightArm.restHandAngle;
-  rightArmSprite.hitArea = computeOpaqueBounds(rightTexture);
+  rightArmSprite.hitArea = computeOpaqueBounds(rightTexture, rightAx, rightAy);
 
   const leftArmContainer = new Container();
   leftArmContainer.addChild(leftArmSprite);
@@ -220,7 +232,7 @@ export async function buildRigParts(config: CutoutRigConfig): Promise<RigRenderP
     const headTexture = await loadPartTexture(config.parts.head);
     headSprite = new Sprite(headTexture);
     headSprite.anchor.set(0.5, 0.5);
-    headSprite.hitArea = computeOpaqueBounds(headTexture);
+    headSprite.hitArea = computeOpaqueBounds(headTexture, 0.5, 0.5);
     headContainer = new Container();
     headContainer.addChild(headSprite);
   }
@@ -229,10 +241,12 @@ export async function buildRigParts(config: CutoutRigConfig): Promise<RigRenderP
   let leftLegSprite: Sprite | undefined;
   if (config.parts.leftLeg && config.leftLeg) {
     const legTexture = await loadPartTexture(config.parts.leftLeg);
+    const ax = config.leftLeg.pivot.x / legTexture.width;
+    const ay = config.leftLeg.pivot.y / legTexture.height;
     leftLegSprite = new Sprite(legTexture);
-    leftLegSprite.anchor.set(config.leftLeg.pivot.x / legTexture.width, config.leftLeg.pivot.y / legTexture.height);
+    leftLegSprite.anchor.set(ax, ay);
     leftLegSprite.rotation = config.leftLeg.restAngle;
-    leftLegSprite.hitArea = computeOpaqueBounds(legTexture);
+    leftLegSprite.hitArea = computeOpaqueBounds(legTexture, ax, ay);
     leftLegContainer = new Container();
     leftLegContainer.addChild(leftLegSprite);
   }
@@ -241,10 +255,12 @@ export async function buildRigParts(config: CutoutRigConfig): Promise<RigRenderP
   let rightLegSprite: Sprite | undefined;
   if (config.parts.rightLeg && config.rightLeg) {
     const legTexture = await loadPartTexture(config.parts.rightLeg);
+    const ax = config.rightLeg.pivot.x / legTexture.width;
+    const ay = config.rightLeg.pivot.y / legTexture.height;
     rightLegSprite = new Sprite(legTexture);
-    rightLegSprite.anchor.set(config.rightLeg.pivot.x / legTexture.width, config.rightLeg.pivot.y / legTexture.height);
+    rightLegSprite.anchor.set(ax, ay);
     rightLegSprite.rotation = config.rightLeg.restAngle;
-    rightLegSprite.hitArea = computeOpaqueBounds(legTexture);
+    rightLegSprite.hitArea = computeOpaqueBounds(legTexture, ax, ay);
     rightLegContainer = new Container();
     rightLegContainer.addChild(rightLegSprite);
   }
