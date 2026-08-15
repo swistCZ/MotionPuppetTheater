@@ -2,6 +2,11 @@ import { describe, it, expect } from 'vitest';
 import {
   lerp,
   clamp,
+  shortestAngleDelta,
+  spreadFactor,
+  limbScale,
+  LIMB_SCALE_MIN,
+  LIMB_SCALE_MAX,
   calculateDistance2D,
   calculateAngleRadians,
   matchDetectedHandsToPuppets,
@@ -24,6 +29,39 @@ describe('gestures math & matching module', () => {
     expect(lerp(0, 10, 0.5)).toBe(5);
     expect(clamp(-5, 0, 10)).toBe(0);
     expect(clamp(15, 0, 10)).toBe(10);
+  });
+
+  it('shortestAngleDelta takes the short way around the circle', () => {
+    expect(shortestAngleDelta(0, 0)).toBeCloseTo(0);
+    expect(shortestAngleDelta(0, Math.PI / 2)).toBeCloseTo(Math.PI / 2);
+    // Wraps instead of spinning ~2PI the long way.
+    expect(shortestAngleDelta(Math.PI - 0.1, -Math.PI + 0.1)).toBeCloseTo(0.2, 5);
+    expect(shortestAngleDelta(0, -Math.PI / 2)).toBeCloseTo(-Math.PI / 2);
+  });
+
+  it('spreadFactor maps finger splay to a limb spread multiplier', () => {
+    expect(spreadFactor(0)).toBeCloseTo(0.7);
+    expect(spreadFactor(1)).toBeCloseTo(1.5);
+    expect(spreadFactor(0.5)).toBeCloseTo(1.1);
+    // Clamps out-of-range splay values.
+    expect(spreadFactor(-1)).toBeCloseTo(0.7);
+    expect(spreadFactor(2)).toBeCloseTo(1.5);
+  });
+
+  it('limbScale keeps puppet reach consistent across hand distances', () => {
+    // At the reference palm width the base scale is used.
+    expect(limbScale(0.12)).toBeCloseTo(250);
+    // A hand twice as close (bigger palm) uses half the scale ...
+    expect(limbScale(0.24)).toBeCloseTo(125);
+    // ... and a hand twice as far (smaller palm) uses double the scale.
+    expect(limbScale(0.06)).toBeCloseTo(500);
+  });
+
+  it('limbScale falls back and clamps for degenerate palms', () => {
+    expect(limbScale(0)).toBe(250);       // missing/unreliable palm data
+    expect(limbScale(0.01)).toBe(250);    // below the reliable threshold
+    expect(limbScale(0.5)).toBe(LIMB_SCALE_MIN); // huge palm -> min clamp
+    expect(limbScale(0.021)).toBe(LIMB_SCALE_MAX); // tiny palm -> max clamp
   });
 
   it('calculateDistance2D and calculateAngleRadians compute distance and angle', () => {

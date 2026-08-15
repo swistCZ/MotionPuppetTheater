@@ -40,6 +40,14 @@ export interface MatchedHandOutput {
   landmarks: Point3D[];
 }
 
+// Limb scaling is derived from the hand's own palm width so the puppet's limb
+// reach is consistent regardless of how far the hand is from the camera.
+// PALM_REFERENCE_WIDTH = typical palm width as a fraction of the frame.
+const PALM_REFERENCE_WIDTH = 0.12;
+const LIMB_BASE_SCALE = 250;
+export const LIMB_SCALE_MIN = 70;
+export const LIMB_SCALE_MAX = 500;
+
 /**
  * Linear interpolation between start and end.
  */
@@ -52,6 +60,33 @@ export function lerp(start: number, end: number, alpha: number): number {
  */
 export function clamp(val: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, val));
+}
+
+/**
+ * Shortest signed angular difference from `a` to `b`, wrapped to [-PI, PI].
+ * Used for smooth rotation interpolation that never spins the long way around.
+ */
+export function shortestAngleDelta(a: number, b: number): number {
+  return Math.atan2(Math.sin(b - a), Math.cos(b - a));
+}
+
+/**
+ * Maps finger splay (0 = fist, 1 = spread) to a limb spread multiplier.
+ * A fist tucks the puppet's limbs in (0.7x), spread fingers stretch them out (1.5x).
+ */
+export function spreadFactor(splay: number): number {
+  return lerp(0.7, 1.5, clamp(splay, 0, 1));
+}
+
+/**
+ * Derives the limb pixel scale from the hand's palm width (normalized coords)
+ * so puppet reach is consistent regardless of camera distance. Falls back to
+ * the base scale for degenerate palm widths and clamps to avoid amplifying
+ * landmark noise.
+ */
+export function limbScale(palmWidth: number): number {
+  if (palmWidth <= 0.02) return LIMB_BASE_SCALE;
+  return clamp((PALM_REFERENCE_WIDTH / palmWidth) * LIMB_BASE_SCALE, LIMB_SCALE_MIN, LIMB_SCALE_MAX);
 }
 
 /**
@@ -206,6 +241,7 @@ export function processHandLandmarks(
   const indexTip = mirroredLandmarks[8] || { x: 0.45, y: 0.2, z: 0 };
   const middleTip = mirroredLandmarks[12] || { x: 0.5, y: 0.18, z: 0 };
   const ringTip = mirroredLandmarks[16] || { x: 0.55, y: 0.2, z: 0 };
+  const pinkyMcp = mirroredLandmarks[17] || { x: 0.55, y: 0.32, z: 0 };
   const pinkyTip = mirroredLandmarks[20] || { x: 0.6, y: 0.25, z: 0 };
 
   const wristPosition: Point2D = { x: wrist.x, y: wrist.y };
@@ -227,8 +263,12 @@ export function processHandLandmarks(
     smoothedPosition = { ...rawPositionPixels };
   }
 
+  // Scale limbs by the palm width so a given gesture produces the same puppet
+  // reach whether the hand is close or far (see `limbScale`).
+  const palmWidth = calculateDistance2D(indexMcp, pinkyMcp);
+  const scale = limbScale(palmWidth);
+
   // Calculate limb offset vectors relative to Palm Center (scaled to pixel coordinates)
-  const scale = 250;
   const limbs: LimbOffsets = {
     head: {
       x: (indexTip.x - palmCenter.x) * scale,

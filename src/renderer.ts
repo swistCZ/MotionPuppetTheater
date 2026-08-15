@@ -1,9 +1,15 @@
 import { Application, Container, Sprite, Graphics, Assets, Texture, Text, TextStyle } from 'pixi.js';
-import { HandState } from './gestures';
+import { HandState, clamp, shortestAngleDelta, spreadFactor } from './gestures';
 import { CutoutRigConfig, armRotation } from './rig';
 import { RigRenderParts, buildRigParts, fetchRigConfig, loadLocalCharacterConfig } from './rigAssets';
 
-export type PuppetPreset = 'dragon' | 'bunny' | 'fox' | 'robot' | 'cat' | 'custom' | 'none' | `rig:${string}`;
+export type PuppetPreset = 'fox' | 'robot' | 'custom' | 'none' | `rig:${string}`;
+
+// Mild in-plane rotation: an upright hand (wrist below palm) maps to 0 deg,
+// and the container tilt is damped so the flat sprite only leans, never flips.
+const ROT_BASE = -Math.PI / 2;
+const ROT_DAMP = 0.35;
+const ROT_ALPHA = 0.25;
 
 interface RigPuppetState {
   config: CutoutRigConfig;
@@ -25,6 +31,7 @@ interface DynamicPuppet {
   leftLeg: Graphics;
   rightLeg: Graphics;
   preset: PuppetPreset;
+  lastRotation?: number;
   customSpriteClosed?: Sprite;
   customSpriteOpen?: Sprite;
   rig?: RigPuppetState;
@@ -53,6 +60,9 @@ export class PuppetRenderer {
   private bgSprite: Sprite | null = null;
   private currentBgColorHex: number = 0x2d3748;
 
+  // Motion Freeze
+  private isFrozen: boolean = false;
+
   private width: number;
   private height: number;
 
@@ -62,8 +72,8 @@ export class PuppetRenderer {
     this.app = new Application();
 
     this.bgGraphics = new Graphics();
-    this.leftPuppet = this.createEmptyPuppet('dragon');
-    this.rightPuppet = this.createEmptyPuppet('bunny');
+    this.leftPuppet = this.createEmptyPuppet('fox');
+    this.rightPuppet = this.createEmptyPuppet('robot');
 
     this.thereminContainer = new Container();
     this.leftThereminOrb = new Graphics();
@@ -145,6 +155,15 @@ export class PuppetRenderer {
     this.rightPuppet.container.visible = !enabled;
   }
 
+  /**
+   * Locks all puppet movement (also honored by the hand simulator, which
+   * drives the puppets directly). Frozen puppets keep their pose and the
+   * last hand state stays stale so Theremin also holds its note.
+   */
+  public setFrozen(frozen: boolean): void {
+    this.isFrozen = frozen;
+  }
+
   public updateThereminVisuals(
     leftHandState?: HandState,
     rightHandState?: HandState,
@@ -168,7 +187,7 @@ export class PuppetRenderer {
       // Inner Core
       this.leftThereminOrb.circle(pos.x, pos.y, 28).fill(0x0284c7).stroke({ width: 4, color: 0xe0f2fe });
 
-      this.leftThereminText.text = `🎵 ${Math.round(frequency)} Hz`;
+      this.leftThereminText.text = `${Math.round(frequency)} Hz`;
       this.leftThereminText.position.set(pos.x - 40, pos.y - 65);
       this.leftThereminText.visible = true;
     } else {
@@ -188,7 +207,7 @@ export class PuppetRenderer {
       // Inner Core
       this.rightThereminOrb.circle(pos.x, pos.y, 28).fill(0xe11d48).stroke({ width: 4, color: 0xffe4e6 });
 
-      this.rightThereminText.text = `🔊 ${Math.round(volumeRatio * 100)}% Vol`;
+      this.rightThereminText.text = `${Math.round(volumeRatio * 100)} %`;
       this.rightThereminText.position.set(pos.x - 45, pos.y - 65);
       this.rightThereminText.visible = true;
     } else {
@@ -237,6 +256,8 @@ export class PuppetRenderer {
 
     if (!puppet.container) return;
 
+    if (this.isFrozen) return;
+
     if (isLeft) this.lastLeftState = state;
     else this.lastRightState = state;
 
@@ -245,6 +266,12 @@ export class PuppetRenderer {
 
     // Smooth position update for Torso center
     puppet.container.position.set(state.smoothedPosition.x, state.smoothedPosition.y);
+
+    // Mild in-plane rotation (hand upright = 0), damped + EMA smoothed.
+    const targetRot = state.rotation - ROT_BASE;
+    const prevRot = puppet.lastRotation ?? targetRot;
+    puppet.lastRotation = prevRot + shortestAngleDelta(prevRot, targetRot) * ROT_ALPHA;
+    puppet.container.rotation = puppet.lastRotation * ROT_DAMP;
 
     // Cut-out rig: move body with the palm, swing movable parts around their joints.
     if (puppet.rig) {
@@ -259,27 +286,30 @@ export class PuppetRenderer {
 
       const restL = config.leftArm.restHandAngle;
       const restR = config.rightArm.restHandAngle;
+      // Finger splay amplifies the swing range (fist = tucks in, spread = wide).
+      const spread = spreadFactor(state.fingerSplay);
       const armRotL = armRotation(state.limbs.leftArm, restL, maxArmDelta);
       const armRotR = armRotation(state.limbs.rightArm, restR, maxArmDelta);
-      const deltaL = armRotL - restL;
-      const deltaR = armRotR - restR;
+      const deltaL = clamp((armRotL - restL) * spread, -maxArmDelta, maxArmDelta);
+      const deltaR = clamp((armRotR - restR) * spread, -maxArmDelta, maxArmDelta);
 
-      if (config.parts.leftArm.movable) parts.leftArmSprite.rotation = armRotL;
-      if (config.parts.rightArm.movable) parts.rightArmSprite.rotation = armRotR;
+      if (config.parts.leftArm.movable) parts.leftArmSprite.rotation = restL + deltaL;
+      if (config.parts.rightArm.movable) parts.rightArmSprite.rotation = restR + deltaR;
 
-      // Legs swing opposite to the same-side arm for a walking look.
+      // Legs swing opposite to the same-side arm for a walking look, plus an
+      // A-frame stance when the fingers are spread (spread palms = split).
       if (parts.leftLegContainer && config.leftLeg && parts.leftLegSprite) {
         const hipL = config.body.hipL ?? { x: bw * 0.38, y: bh * 0.85 };
         parts.leftLegContainer.position.set(hipL.x - bw / 2, hipL.y - bh / 2);
         if (config.parts.leftLeg?.movable) {
-          parts.leftLegSprite.rotation = config.leftLeg.restAngle - 0.5 * deltaL;
+          parts.leftLegSprite.rotation = config.leftLeg.restAngle - 0.5 * deltaL - 0.35 * state.fingerSplay;
         }
       }
       if (parts.rightLegContainer && config.rightLeg && parts.rightLegSprite) {
         const hipR = config.body.hipR ?? { x: bw * 0.62, y: bh * 0.85 };
         parts.rightLegContainer.position.set(hipR.x - bw / 2, hipR.y - bh / 2);
         if (config.parts.rightLeg?.movable) {
-          parts.rightLegSprite.rotation = config.rightLeg.restAngle - 0.5 * deltaR;
+          parts.rightLegSprite.rotation = config.rightLeg.restAngle - 0.5 * deltaR + 0.35 * state.fingerSplay;
         }
       }
 
@@ -312,13 +342,16 @@ export class PuppetRenderer {
     const limbColor = this.getPrimaryColorForPreset(puppet.preset);
     const strokeColor = this.getSecondaryColorForPreset(puppet.preset);
 
+    // Finger splay stretches the limbs outward (open palm) or tucks them in (fist).
+    const spread = spreadFactor(state.fingerSplay);
+
     // Left Arm (driven by Thumb)
     puppet.leftArm.clear();
     puppet.leftArm
       .moveTo(-25, -10)
-      .lineTo(state.limbs.leftArm.x, state.limbs.leftArm.y)
+      .lineTo(state.limbs.leftArm.x * spread, state.limbs.leftArm.y * spread)
       .stroke({ width: 12, color: strokeColor, cap: 'round' })
-      .circle(state.limbs.leftArm.x, state.limbs.leftArm.y, 10)
+      .circle(state.limbs.leftArm.x * spread, state.limbs.leftArm.y * spread, 10)
       .fill(limbColor)
       .stroke({ width: 3, color: strokeColor });
 
@@ -326,9 +359,9 @@ export class PuppetRenderer {
     puppet.rightArm.clear();
     puppet.rightArm
       .moveTo(25, -10)
-      .lineTo(state.limbs.rightArm.x, state.limbs.rightArm.y)
+      .lineTo(state.limbs.rightArm.x * spread, state.limbs.rightArm.y * spread)
       .stroke({ width: 12, color: strokeColor, cap: 'round' })
-      .circle(state.limbs.rightArm.x, state.limbs.rightArm.y, 10)
+      .circle(state.limbs.rightArm.x * spread, state.limbs.rightArm.y * spread, 10)
       .fill(limbColor)
       .stroke({ width: 3, color: strokeColor });
 
@@ -336,9 +369,9 @@ export class PuppetRenderer {
     puppet.leftLeg.clear();
     puppet.leftLeg
       .moveTo(-20, 30)
-      .lineTo(state.limbs.leftLeg.x, state.limbs.leftLeg.y)
+      .lineTo(state.limbs.leftLeg.x * spread, state.limbs.leftLeg.y * spread)
       .stroke({ width: 14, color: strokeColor, cap: 'round' })
-      .ellipse(state.limbs.leftLeg.x - 5, state.limbs.leftLeg.y + 4, 14, 8)
+      .ellipse(state.limbs.leftLeg.x * spread - 5, state.limbs.leftLeg.y * spread + 4, 14, 8)
       .fill(limbColor)
       .stroke({ width: 3, color: strokeColor });
 
@@ -346,9 +379,9 @@ export class PuppetRenderer {
     puppet.rightLeg.clear();
     puppet.rightLeg
       .moveTo(20, 30)
-      .lineTo(state.limbs.rightLeg.x, state.limbs.rightLeg.y)
+      .lineTo(state.limbs.rightLeg.x * spread, state.limbs.rightLeg.y * spread)
       .stroke({ width: 14, color: strokeColor, cap: 'round' })
-      .ellipse(state.limbs.rightLeg.x + 5, state.limbs.rightLeg.y + 4, 14, 8)
+      .ellipse(state.limbs.rightLeg.x * spread + 5, state.limbs.rightLeg.y * spread + 4, 14, 8)
       .fill(limbColor)
       .stroke({ width: 3, color: strokeColor });
   }
@@ -409,6 +442,7 @@ export class PuppetRenderer {
     const isLeft = handType === 'Left';
     const puppet = isLeft ? this.leftPuppet : this.rightPuppet;
     puppet.preset = preset;
+    puppet.lastRotation = undefined;
 
     puppet.container.removeChildren();
 
@@ -451,23 +485,14 @@ export class PuppetRenderer {
     puppet.headContainer.removeChildren();
 
     switch (preset) {
-      case 'dragon':
-        this.drawDragonPreset(puppet);
-        break;
-      case 'bunny':
-        this.drawBunnyPreset(puppet);
-        break;
       case 'fox':
         this.drawFoxPreset(puppet);
         break;
       case 'robot':
         this.drawRobotPreset(puppet);
         break;
-      case 'cat':
-        this.drawCatPreset(puppet);
-        break;
       default:
-        this.drawDragonPreset(puppet);
+        this.drawFoxPreset(puppet);
         break;
     }
 
@@ -542,57 +567,21 @@ export class PuppetRenderer {
 
   private getPrimaryColorForPreset(preset: PuppetPreset): number {
     switch (preset) {
-      case 'dragon': return 0x48bb78;
-      case 'bunny': return 0xb794f4;
       case 'fox': return 0xed8936;
       case 'robot': return 0xc0c9d6;
-      case 'cat': return 0xf6e05e;
-      default: return 0x48bb78;
+      default: return 0xed8936;
     }
   }
 
   private getSecondaryColorForPreset(preset: PuppetPreset): number {
     switch (preset) {
-      case 'dragon': return 0x2f855a;
-      case 'bunny': return 0x6b46c1;
       case 'fox': return 0xc05621;
       case 'robot': return 0x4a5568;
-      case 'cat': return 0xd69e2e;
-      default: return 0x2f855a;
+      default: return 0xc05621;
     }
   }
 
-  // 1. Dragon Preset
-  private drawDragonPreset(p: DynamicPuppet): void {
-    p.torso.roundRect(-30, -20, 60, 70, 20).fill(0x48bb78).stroke({ width: 4, color: 0x2f855a });
-    p.torso.roundRect(-20, -10, 40, 50, 15).fill(0xf6e05e);
-
-    p.headGraphic.circle(0, 0, 45).fill(0x48bb78).stroke({ width: 4, color: 0x2f855a });
-    p.headGraphic.poly([-20, -30, -35, -60, -10, -40]).fill(0xf6e05e).stroke({ width: 3, color: 0x2f855a });
-    p.headGraphic.poly([20, -30, 35, -60, 10, -40]).fill(0xf6e05e).stroke({ width: 3, color: 0x2f855a });
-
-    p.leftEye.circle(-16, -10, 9).fill(0xffffff).circle(-14, -10, 4).fill(0x1a202c);
-    p.rightEye.circle(16, -10, 9).fill(0xffffff).circle(14, -10, 4).fill(0x1a202c);
-
-    p.jaw.arc(0, 10, 18, 0, Math.PI, false).fill(0xe53e3e).stroke({ width: 3, color: 0x1a202c });
-  }
-
-  // 2. Bunny Preset
-  private drawBunnyPreset(p: DynamicPuppet): void {
-    p.torso.roundRect(-28, -20, 56, 65, 20).fill(0xb794f4).stroke({ width: 4, color: 0x6b46c1 });
-    p.torso.circle(0, 10, 18).fill(0xffffff);
-
-    p.headGraphic.circle(0, 0, 42).fill(0xb794f4).stroke({ width: 4, color: 0x6b46c1 });
-    p.headGraphic.ellipse(-18, -55, 10, 30).fill(0xb794f4).stroke({ width: 3, color: 0x6b46c1 });
-    p.headGraphic.ellipse(18, -55, 10, 30).fill(0xb794f4).stroke({ width: 3, color: 0x6b46c1 });
-
-    p.leftEye.circle(-15, -8, 8).fill(0xffffff).circle(-13, -8, 3).fill(0x1a202c);
-    p.rightEye.circle(15, -8, 8).fill(0xffffff).circle(13, -8, 3).fill(0x1a202c);
-
-    p.jaw.arc(0, 10, 15, 0, Math.PI, false).fill(0xf687b3).stroke({ width: 2, color: 0x1a202c });
-  }
-
-  // 3. Fox Preset
+  // 1. Fox Preset
   private drawFoxPreset(p: DynamicPuppet): void {
     p.torso.roundRect(-30, -20, 60, 65, 18).fill(0xed8936).stroke({ width: 4, color: 0xc05621 });
     p.torso.ellipse(0, 12, 16, 22).fill(0xffffff);
@@ -607,7 +596,7 @@ export class PuppetRenderer {
     p.jaw.arc(0, 16, 14, 0, Math.PI, false).fill(0xe53e3e);
   }
 
-  // 4. Robot Preset
+  // 2. Robot Preset
   private drawRobotPreset(p: DynamicPuppet): void {
     p.torso.roundRect(-35, -20, 70, 70, 10).fill(0xc0c9d6).stroke({ width: 4, color: 0x4a5568 });
     p.torso.rect(-18, -5, 36, 25).fill(0x3182ce).stroke({ width: 2, color: 0x2d3748 });
@@ -620,19 +609,5 @@ export class PuppetRenderer {
     p.rightEye.rect(7, -20, 18, 14).fill(0x3182ce);
 
     p.jaw.rect(-20, 5, 40, 12).fill(0x4a5568);
-  }
-
-  // 5. Cat Preset
-  private drawCatPreset(p: DynamicPuppet): void {
-    p.torso.roundRect(-28, -20, 56, 65, 20).fill(0xf6e05e).stroke({ width: 4, color: 0xd69e2e });
-
-    p.headGraphic.circle(0, 0, 42).fill(0xf6e05e).stroke({ width: 4, color: 0xd69e2e });
-    p.headGraphic.poly([-30, -15, -20, -50, -5, -25]).fill(0xf6e05e).stroke({ width: 3, color: 0xd69e2e });
-    p.headGraphic.poly([30, -15, 20, -50, 5, -25]).fill(0xf6e05e).stroke({ width: 3, color: 0xd69e2e });
-
-    p.leftEye.ellipse(-15, -8, 8, 10).fill(0x48bb78).circle(-15, -8, 3).fill(0x1a202c);
-    p.rightEye.ellipse(15, -8, 8, 10).fill(0x48bb78).circle(15, -8, 3).fill(0x1a202c);
-
-    p.jaw.arc(0, 10, 15, 0, Math.PI, false).fill(0xe53e3e).stroke({ width: 2, color: 0x1a202c });
   }
 }

@@ -14,6 +14,9 @@ export class HandTracker {
   private onErrorCallback: TrackingErrorCallback | null = null;
   private isRunning: boolean = false;
   private isProcessingFrame: boolean = false;
+  private sources: string[] = [];
+  private sourceIndex: number = 0;
+  private consecutiveSendErrors: number = 0;
 
   constructor(videoElement: HTMLVideoElement) {
     this.videoElement = videoElement;
@@ -31,7 +34,7 @@ export class HandTracker {
     // Resolve absolute local path to public/mediapipe/
     const localAbsoluteUrl = new URL('mediapipe/', window.location.href).href;
 
-    const sources = [
+    this.sources = [
       localAbsoluteUrl,
       './mediapipe/',
       'https://cdn.jsdelivr.net/npm/@mediapipe/hands/',
@@ -40,28 +43,17 @@ export class HandTracker {
 
     let lastErr: Error | null = null;
 
-    for (const sourceUrl of sources) {
+    for (this.sourceIndex = 0; this.sourceIndex < this.sources.length; this.sourceIndex++) {
+      const sourceUrl = this.sources[this.sourceIndex];
       try {
-        this.hands = new Hands({
-          locateFile: (file: string) => `${sourceUrl}${file}`,
-        });
-
-        const options: Options = {
-          maxNumHands: 2,
-          modelComplexity: 0, // Lightweight fast model for 60 FPS across all browsers
-          minDetectionConfidence: 0.5,
-          minTrackingConfidence: 0.5,
-        };
-
-        this.hands.setOptions(options);
-
-        this.hands.onResults((results: Results) => {
-          this.isProcessingFrame = false;
-          if (this.onResultsCallback) {
-            this.onResultsCallback(results);
-          }
-        });
-
+        // Probe the source before constructing Hands — a missing WASM would
+        // otherwise only fail asynchronously on the first send().
+        const probe = await fetch(`${sourceUrl}hands.js`, { method: 'HEAD' });
+        if (!probe.ok) {
+          throw new Error(`zdroj nedostupný (HTTP ${probe.status})`);
+        }
+        this.configureHands(sourceUrl);
+        this.consecutiveSendErrors = 0;
         return;
       } catch (err) {
         lastErr = err instanceof Error ? err : new Error(String(err));
@@ -73,10 +65,64 @@ export class HandTracker {
     }
   }
 
+  private configureHands(sourceUrl: string): void {
+    this.hands = new Hands({
+      locateFile: (file: string) => `${sourceUrl}${file}`,
+    });
+
+    const options: Options = {
+      maxNumHands: 2,
+      modelComplexity: 0, // Lightweight fast model for 60 FPS across all browsers
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5,
+    };
+
+    this.hands.setOptions(options);
+
+    this.hands.onResults((results: Results) => {
+      this.isProcessingFrame = false;
+      if (this.onResultsCallback) {
+        this.onResultsCallback(results);
+      }
+    });
+  }
+
+  /**
+   * Tries the next MediaPipe source when the current one keeps failing at send()
+   * time. Reports a user-facing error and stops tracking once all sources fail.
+   */
+  private async attemptSourceFallback(): Promise<void> {
+    if (this.sourceIndex + 1 >= this.sources.length) {
+      // Reset the whole model state so a later restart probes all sources again.
+      this.hands = null;
+      this.sourceIndex = 0;
+      this.consecutiveSendErrors = 0;
+      this.stop();
+      if (this.onErrorCallback) {
+        this.onErrorCallback(
+          new Error('Sledování rukou selhalo — AI modely se nepodařilo načíst z žádného zdroje.')
+        );
+      }
+      return;
+    }
+    this.sourceIndex++;
+    const sourceUrl = this.sources[this.sourceIndex];
+    try {
+      const probe = await fetch(`${sourceUrl}hands.js`, { method: 'HEAD' });
+      if (!probe.ok) throw new Error(`HTTP ${probe.status}`);
+      this.configureHands(sourceUrl);
+      this.consecutiveSendErrors = 0;
+    } catch {
+      await this.attemptSourceFallback();
+    }
+  }
+
   /**
    * Starts universal cross-browser video stream (DuckDuckGo, Safari, Chrome, Firefox, Edge, Mobile) and camera processing loop.
+   * Resolves to `true` on success, `false` when the camera couldn't start (the
+   * error is reported through `onError`).
    */
-  public async start(onResults: TrackingResultsCallback, onError?: TrackingErrorCallback): Promise<void> {
+  public async start(onResults: TrackingResultsCallback, onError?: TrackingErrorCallback): Promise<boolean> {
     this.onResultsCallback = onResults;
     this.onErrorCallback = onError || null;
 
@@ -88,7 +134,7 @@ export class HandTracker {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       const err = new Error('Kamera vyžaduje zabezpečené připojení HTTPS nebo localhost.');
       if (this.onErrorCallback) this.onErrorCallback(err);
-      return;
+      return false;
     }
 
     try {
@@ -112,6 +158,7 @@ export class HandTracker {
 
       this.isRunning = true;
       this.runProcessingLoop();
+      return true;
     } catch (err) {
       this.isRunning = false;
       const parsedError = this.formatCameraError(err);
@@ -120,6 +167,7 @@ export class HandTracker {
       } else {
         console.error('HandTracker camera error:', parsedError);
       }
+      return false;
     }
   }
 
@@ -148,7 +196,12 @@ export class HandTracker {
           await this.hands.send({ image: this.frameCanvas });
         } catch (err) {
           this.isProcessingFrame = false;
-          console.warn('Frame send warning:', err);
+          this.consecutiveSendErrors++;
+          if (this.consecutiveSendErrors >= 60) {
+            this.consecutiveSendErrors = 0;
+            console.warn('MediaPipe source failed repeatedly; trying the next source.');
+            void this.attemptSourceFallback();
+          }
         }
       }
 

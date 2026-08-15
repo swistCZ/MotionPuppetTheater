@@ -18,7 +18,7 @@
   * `rig.ts`: Pure cut-out rig model (config types, `validateRigConfig`, `armRotation`) - unit testable without Pixi.
   * `rigAssets.ts`: Rig asset loading (config fetch, per-part image loading, optional background removal, sprite hierarchy build).
   * `builder.html` + `builder.ts`: **Rig builder page** (`/builder.html`) - upload body/left/right arm files, click-to-place shoulders & pivots, rest-angle + swing preview, **import/export of `config.json`** (images embedded as data URLs, relative paths fetched on import).
-  * `simulator.ts`: Camera-free hand simulator - body follows the mouse (or an idle demo path), arms wave around the shoulders; used to verify rigs without a webcam.
+  * `simulator.ts`: Camera-free hand simulator - body follows the mouse (no idle demo drift; it stays put when the mouse rests), arms wave around the shoulders; used to verify rigs without a webcam.
   * `theremin.ts`: Web Audio API digital Theremin synthesizer with `MediaStreamAudioDestinationNode` output.
   * `recorder.ts`: `StageRecorder` module for capturing 60 FPS stage video + Theremin soundtrack with live `REC` timer and direct video file download.
   * `main.ts`: UI event handling, decoupled `requestAnimationFrame` display loop, persistence buffers, Motion Freeze, Theremin toggle, Recording, FPS counter, rig character menu population, app lifecycle.
@@ -32,17 +32,28 @@
 * [x] **Demo rig character** (`public/characters/demo/`): body + head + two arm + two leg SVG files proving the full six-part rig end-to-end.
 * [x] **Rig builder** (`Builder` / `/builder.html`): uploads up to six parts (body required + arms; head/legs optional), per-part **Pohyblivá / Statická** toggle, auto-guessed shoulders/neck/hips/pivots, click-to-place joints on previews, rest-angle & swing preview, imports/exports a self-contained `config.json` (images embedded as data URLs) or saves it straight into the browser's localStorage (`Uložit do prohlížeče`) - the single supported way to add characters. Browser-local characters show up under `Uložené v prohlížeči` in the app's selects.
 * [x] **Historical rabbit** (`public/characters/rabbit/rabbit.png`): BL Stowe MS17 f191v (public domain), kept as reference material until user re-cuts it into separate parts.
-* [x] **Hand simulator without webcam** (`Simulace` button or `?sim=1`): body follows the mouse (or idle demo path), arms wave automatically - verifies rigs on machines with no camera.
+* [x] **Hand simulator without webcam** (`Simulace` button or `?sim=1`): body follows the mouse, arms wave automatically - verifies rigs on machines with no camera. Idle no longer drifts the puppet (idle demo path removed - body parks where the mouse rests).
+* [x] **Simulator limbs move independently**: each arm/leg now has its own sine (frequency/amplitude/phase) instead of being a mirrored copy of the sibling limb - closer to real finger-driven tracking and no longer looks like a single motion pasted to both sides.
+* [x] **Palm-width limb scaling**: limb reach is now derived from the palm width (`limbScale(palmWidth)`, lm5-lm17 distance) instead of a fixed `scale = 250`, so puppet gestures stay consistent regardless of hand distance from the camera. Clamped (`70..500`) and falls back to the base scale for degenerate palms; direction is unchanged so rig `armRotation` is unaffected. Unit tested (21 tests).
 * [x] Unit tests for proximity matching and rig math (`armRotation`, `validateRigConfig`) - 17 tests passing.
 * [x] **Professional UI polish**: emojis removed from the main control bar, selects, builder and status text; uniform 32px control heights (buttons / selects / uploads); rebuilt builder page with consistent GitHub-dark design tokens, dropzone tiles, switch toggles and grouped joint modes.
+* [x] **Unused preset cleanup**: removed the unreachable procedural presets (dragon, bunny, cat) — `PuppetPreset` is now `'fox' | 'robot' | 'custom' | 'none' | rig`; Theremin orb labels de-emojified (`"440 Hz"` / `"50 %"`).
+* [x] **Mild in-plane puppet rotation**: `rotation` (wrist→palm angle) is now used — upright hand maps to 0°, EMA-smoothed via `shortestAngleDelta` and damped (`ROT_DAMP = 0.35`) so the flat sprite only leans (it can never foreshorten to a line; that would require 3D rotation).
+* [x] **Finger-splay limb spread**: `spreadFactor(splay)` amplifies the swing/limb reach (fist = 0.7x tucked in, spread = 1.5x) and drives an A-frame leg stance (±0.35 rad per leg) — applied to both procedural puppets and cut-out rigs.
+* [x] **Camera/model error handling**: `tracker.start()` now resolves a `boolean` so the error banner is no longer instantly hidden by `hideStatus()`; a `try/catch` in the UI prevents a stuck "Zastavit" button when MediaPipe init fails; `initialize()` probes each source (`fetch(.../hands.js, HEAD)`) and the processing loop falls back to the next source after 60 consecutive `send()` failures.
+* [x] **Motion Freeze honored everywhere**: freeze is enforced inside `PuppetRenderer.updateHandState` (via `setFrozen`), so it now also locks puppets while the hand simulator is driving them.
+* [x] **Theremin full stop**: toggling off ramps the gain, then stops the oscillator and disconnects the gain graph + stream destination; the next toggle rebuilds the nodes.
 
 ## 3. Active Task & Next Steps
-* **Active Task:** Six-part rig (head + arms + legs, each movable/static) and professional builder UI complete (build & 17 tests green). Character list is auto-generated (Vite plugin scans `public/characters/` for folders with a valid `config.json`; dev serves it live, build emits `index.json`). Waiting on user to re-cut the rabbit (and add dog, snail, etc.) into separate part files and assemble them via `/builder.html`.
+* **Active Task:** Six-part rig + professional builder UI complete; preset cleanup, mild in-plane rotation, finger-splay limb spread, and the camera/model/freeze/theremin robustness fixes all shipped (build & 19 tests green). Character list is auto-generated (Vite plugin scans `public/characters/` for folders with a valid `config.json`; dev serves it live, build emits `index.json`). Waiting on user to re-cut the rabbit (and add dog, snail, etc.) into separate part files and assemble them via `/builder.html`.
 * **Next Steps:**
   1. User prepares separate part images (body, head, arms, legs) and assembles them via the builder; either hit `Uložit do prohlížeče` (character appears instantly in the app's list for that browser) or drop the exported `config.json` into `public/characters/<id>/` for the shared, site-wide list (the Vite plugin regenerates `index.json` automatically). Characters with a missing `config.json` or missing part images are auto-removed from the list at runtime.
   2. Optional: two-bone IK (elbows/knees) so arms bend instead of rotating rigidly at the shoulder.
+  3. Optional: tune `ROT_DAMP` / `ROT_ALPHA` and `spreadFactor` range after real-camera playtesting.
 
 ## 4. Known Issues / Technical Debt / Blockers
 * Builder exports data-URL images (self-contained single file, slightly larger JSON) - fine for dev; swap for file paths in `config.json` if bundle size matters.
 * Rig arms rotate rigidly around the shoulder (simplified v1); no elbow/knee IK yet.
 * Full-page manuscript scans include background clutter - prefer isolated single-figure crops when adding new characters.
+* Puppet rotation is intentionally subtle and damped; a full 360° follow would require resolving the wrist→palm angle wrap against the container's smoothed rotation (out of scope).
+* `multiHandedness.label` is still unused by the spatial-proximity hand matcher — kept that way deliberately so crossing recovery and screen-half assignment stay deterministic (covered by unit tests).

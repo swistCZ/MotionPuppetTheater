@@ -68,7 +68,38 @@ export class ThereminSynth {
 
   private stopAudio(): void {
     if (this.gainNode && this.audioCtx) {
-      this.gainNode.gain.linearRampToValueAtTime(0.0001, this.audioCtx.currentTime + 0.1);
+      const ctx = this.audioCtx;
+      const osc = this.oscillator;
+      this.gainNode.gain.cancelScheduledValues(ctx.currentTime);
+      this.gainNode.gain.setValueAtTime(this.gainNode.gain.value, ctx.currentTime);
+      this.gainNode.gain.linearRampToValueAtTime(0.0001, ctx.currentTime + 0.1);
+
+      // After the fade-out, actually stop the oscillator and detach the graph
+      // so nothing keeps running in the background. The next toggle() rebuilds it.
+      window.setTimeout(() => {
+        try {
+          osc?.stop();
+        } catch {
+          // already stopped
+        }
+        if (this.streamDest) {
+          try {
+            this.gainNode?.disconnect(this.streamDest);
+          } catch {
+            // not connected
+          }
+          this.streamDest = null;
+        }
+        if (this.gainNode) {
+          try {
+            this.gainNode.disconnect(ctx.destination);
+          } catch {
+            // not connected
+          }
+          this.gainNode = null;
+        }
+        this.oscillator = null;
+      }, 150);
     }
   }
 

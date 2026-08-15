@@ -223,17 +223,30 @@ class AppManager {
         btnCamera.classList.add('btn-secondary');
         this.showStatus('Spouštění kamery...');
 
-        await this.tracker.start(
-          (results) => this.handleTrackingResults(results),
-          (err) => {
-            this.showStatus(`Chyba kamery: ${err.message}`);
-            btnCamera.textContent = 'Kamera';
-            btnCamera.classList.remove('btn-secondary');
-            btnCamera.classList.add('btn-primary');
-          }
-        );
+        const resetButton = (): void => {
+          btnCamera.textContent = 'Kamera';
+          btnCamera.classList.remove('btn-secondary');
+          btnCamera.classList.add('btn-primary');
+        };
 
-        this.hideStatus();
+        try {
+          const started = await this.tracker.start(
+            (results) => this.handleTrackingResults(results),
+            (err) => {
+              this.showStatus(`Chyba kamery: ${err.message}`);
+              resetButton();
+            }
+          );
+          // Only clear the banner on success — on failure the error callback
+          // already reported the problem and reset the button.
+          if (started) {
+            this.hideStatus();
+          }
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          this.showStatus(`Chyba kamery: ${message}`);
+          resetButton();
+        }
       }
     });
 
@@ -286,6 +299,7 @@ class AppManager {
     // Toggle Motion Freeze / Lock
     btnToggleFreeze.addEventListener('click', () => {
       this.isMotionFrozen = !this.isMotionFrozen;
+      this.renderer.setFrozen(this.isMotionFrozen);
       if (this.isMotionFrozen) {
         btnToggleFreeze.textContent = 'Zamknuto';
         btnToggleFreeze.classList.remove('btn-secondary');
@@ -468,10 +482,9 @@ class AppManager {
         // Store updated position
         this.prevPositions.set(handType, state.smoothedPosition);
 
-        // Update Pixi.js puppet if motion is not frozen
-        if (!this.isMotionFrozen) {
-          this.renderer.updateHandState(state);
-        }
+        // Update Pixi.js puppet (freeze is enforced inside the renderer so it
+        // also applies while the hand simulator drives the puppets directly).
+        this.renderer.updateHandState(state);
 
         // Draw debug landmarks overlay (mirrored X)
         if (this.showDebugOverlay) {
