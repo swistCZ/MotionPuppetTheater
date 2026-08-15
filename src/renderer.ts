@@ -149,6 +149,7 @@ export class PuppetRenderer {
       backgroundColor: 0x1e1e2e,
       antialias: true,
       preference: 'webgl',
+      preserveDrawingBuffer: true,
       resolution: window.devicePixelRatio || 1,
       autoDensity: true,
     });
@@ -332,58 +333,7 @@ export class PuppetRenderer {
     this.dragInfo.clear();
 
     for (const puppet of [this.leftPuppet, this.rightPuppet]) {
-      if (puppet.rig) {
-        const { parts, config } = puppet.rig;
-
-        const entries: Array<{ sprite?: Sprite; part: RigPartKey; movable: boolean }> = [
-          { sprite: parts.bodySprite, part: 'body', movable: true },
-          { sprite: parts.leftArmSprite, part: 'leftArm', movable: !!config.parts.leftArm.movable },
-          { sprite: parts.rightArmSprite, part: 'rightArm', movable: !!config.parts.rightArm.movable },
-          { sprite: parts.leftLegSprite, part: 'leftLeg', movable: !!config.parts.leftLeg?.movable },
-          { sprite: parts.rightLegSprite, part: 'rightLeg', movable: !!config.parts.rightLeg?.movable },
-          { sprite: parts.headSprite, part: 'head', movable: !!config.parts.head?.movable },
-        ];
-
-        for (const entry of entries) {
-          if (!entry.sprite) continue;
-          const sprite = entry.sprite;
-          sprite.eventMode = enabled && entry.movable ? 'static' : 'none';
-          sprite.cursor = enabled && entry.movable ? 'pointer' : 'default';
-          if (enabled) {
-            this.dragInfo.set(sprite, { puppet, part: entry.part });
-            sprite.on('pointerdown', this.onPartPointerDown);
-          } else {
-            sprite.off('pointerdown', this.onPartPointerDown);
-          }
-        }
-        continue;
-      }
-
-      // Procedural puppets (fox/robot/custom): make every part draggable with
-      // the mouse so stop-motion framing works without camera/gesture input.
-      const procTargets: Array<{ target: Container; part: RigPartKey }> = [
-        { target: puppet.torso, part: 'body' },
-        { target: puppet.headGraphic, part: 'head' },
-        { target: puppet.leftArm, part: 'leftArm' },
-        { target: puppet.rightArm, part: 'rightArm' },
-        { target: puppet.leftLeg, part: 'leftLeg' },
-        { target: puppet.rightLeg, part: 'rightLeg' },
-      ];
-      if (puppet.preset === 'custom' && puppet.customSpriteClosed) {
-        procTargets.push({ target: puppet.customSpriteClosed, part: 'body' });
-        if (puppet.customSpriteOpen) procTargets.push({ target: puppet.customSpriteOpen, part: 'body' });
-      }
-      for (const { target, part } of procTargets) {
-        target.eventMode = enabled ? 'static' : 'none';
-        target.cursor = enabled ? 'pointer' : 'default';
-        if (enabled) {
-          this.procDragTargets.set(target, { puppet, part });
-          target.on('pointerdown', this.onProcPartPointerDown);
-        } else {
-          this.procDragTargets.delete(target);
-          target.off('pointerdown', this.onProcPartPointerDown);
-        }
-      }
+      this.setupPoseEditingForPuppet(puppet, enabled);
     }
 
     if (enabled) {
@@ -396,6 +346,79 @@ export class PuppetRenderer {
       this.app.stage.off('pointerup', this.onStagePointerUp);
       this.app.stage.off('pointerupoutside', this.onStagePointerUp);
       this.endDrag();
+    }
+  }
+
+  /** Adds or removes the drag interactivity for one puppet. Used both by
+   * setPoseEditing and by the puppet (re)build paths so a puppet switched in
+   * while stop-motion is active is immediately draggable (fresh rig sprites
+   * would otherwise have no event handlers). */
+  private setupPoseEditingForPuppet(puppet: DynamicPuppet, enabled: boolean): void {
+    if (puppet.rig) {
+      const { parts, config } = puppet.rig;
+
+      const entries: Array<{ sprite?: Sprite; part: RigPartKey; movable: boolean }> = [
+        { sprite: parts.bodySprite, part: 'body', movable: true },
+        { sprite: parts.leftArmSprite, part: 'leftArm', movable: !!config.parts.leftArm.movable },
+        { sprite: parts.rightArmSprite, part: 'rightArm', movable: !!config.parts.rightArm.movable },
+        { sprite: parts.leftLegSprite, part: 'leftLeg', movable: !!config.parts.leftLeg?.movable },
+        { sprite: parts.rightLegSprite, part: 'rightLeg', movable: !!config.parts.rightLeg?.movable },
+        { sprite: parts.headSprite, part: 'head', movable: !!config.parts.head?.movable },
+      ];
+
+      for (const entry of entries) {
+        if (!entry.sprite) continue;
+        const sprite = entry.sprite;
+        sprite.eventMode = enabled && entry.movable ? 'static' : 'none';
+        sprite.cursor = enabled && entry.movable ? 'pointer' : 'default';
+        if (enabled) {
+          this.dragInfo.set(sprite, { puppet, part: entry.part });
+          sprite.on('pointerdown', this.onPartPointerDown);
+        } else {
+          sprite.off('pointerdown', this.onPartPointerDown);
+        }
+      }
+      return;
+    }
+
+    // Procedural puppets (fox/robot/custom): make every part draggable with
+    // the mouse so stop-motion framing works without camera/gesture input.
+    const procTargets: Array<{ target: Container; part: RigPartKey }> = [
+      { target: puppet.torso, part: 'body' },
+      { target: puppet.headGraphic, part: 'head' },
+      { target: puppet.leftArm, part: 'leftArm' },
+      { target: puppet.rightArm, part: 'rightArm' },
+      { target: puppet.leftLeg, part: 'leftLeg' },
+      { target: puppet.rightLeg, part: 'rightLeg' },
+    ];
+    if (puppet.preset === 'custom' && puppet.customSpriteClosed) {
+      procTargets.push({ target: puppet.customSpriteClosed, part: 'body' });
+      if (puppet.customSpriteOpen) procTargets.push({ target: puppet.customSpriteOpen, part: 'body' });
+    }
+    for (const { target, part } of procTargets) {
+      target.eventMode = enabled ? 'static' : 'none';
+      target.cursor = enabled ? 'pointer' : 'default';
+      if (enabled) {
+        this.procDragTargets.set(target, { puppet, part });
+        target.on('pointerdown', this.onProcPartPointerDown);
+      } else {
+        this.procDragTargets.delete(target);
+        target.off('pointerdown', this.onProcPartPointerDown);
+      }
+    }
+  }
+
+  /** Re-poses and re-enables dragging for a puppet that was just (re)built
+   * while pose editing is active. A freshly built rig has every part at its
+   * container origin - without a fresh pose the arms look "collapsed" until a
+   * hand state arrives, so apply the stored state (or a neutral resting pose). */
+  private refreshPosedPuppet(puppet: DynamicPuppet): void {
+    this.setupPoseEditingForPuppet(puppet, true);
+    const state = this.getLastHandStateForPuppet(puppet);
+    if (state) {
+      this.updateHandState(state);
+    } else {
+      this.posePuppetNeutral(puppet, this.width * 0.35, this.height * 0.62);
     }
   }
 
@@ -966,6 +989,8 @@ export class PuppetRenderer {
 
       puppet.customSpriteClosed = closedSprite;
       puppet.customSpriteOpen = openSprite;
+
+      if (this.poseEditing) this.refreshPosedPuppet(puppet);
     } catch (err) {
       console.error('Failed to load custom puppet image:', err);
     }
@@ -1004,6 +1029,7 @@ export class PuppetRenderer {
       } else {
         await this.buildRigPuppet(puppet, preset.slice(4), rigConfigOverride);
       }
+      if (this.poseEditing) this.refreshPosedPuppet(puppet);
       return;
     }
 
@@ -1046,6 +1072,8 @@ export class PuppetRenderer {
     puppet.headContainer.addChild(puppet.rightEye);
 
     puppet.container.addChild(puppet.headContainer);
+
+    if (this.poseEditing) this.refreshPosedPuppet(puppet);
   }
 
   /**
