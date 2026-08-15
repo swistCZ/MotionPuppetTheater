@@ -406,13 +406,14 @@ class AppManager {
     btnStopMotion.addEventListener('click', () => {
       this.stopMotionActive = !this.stopMotionActive;
       this.stopMotion.setModeActive(this.stopMotionActive);
+      this.renderer.setPoseEditing(this.stopMotionActive);
 
       if (this.stopMotionActive) {
         btnStopMotion.textContent = 'Stop-motion (ZAP)';
         btnStopMotion.classList.remove('btn-secondary');
         btnStopMotion.classList.add('btn-primary');
         this.resizeStopMotionOverlays();
-        this.showStatus('Stop-motion: pěst = zamknutí pózy, Snímek = uložit snímek.');
+        this.showStatus('Stop-motion: pěst = zamknutí pózy, tažením myší doladíš díly, Snímek = uložit.');
       } else {
         btnStopMotion.textContent = 'Stop-motion';
         btnStopMotion.classList.remove('btn-primary');

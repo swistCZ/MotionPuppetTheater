@@ -53,12 +53,12 @@
 
 ## 5. Roadmap: Stop-Motion Assistant Mode (`feat/stop-motion`)
 * **Idea:** a separate mode (toggle in the main bar) turning the theater into a **stop-motion animation assistant** - pose a rig puppet, snap a frame, nudge it, snap again, then play back and export. Branch: `feat/stop-motion` (new, not started). Nothing below is implemented yet.
-* **Phase 1 - Core mode:**
+* **Phase 1 - Core mode (DONE):**
   * [x] Mode toggle (`Stop-motion` button in the main bar) showing the stop-motion timeline panel; live theater controls stay untouched. Exit restores the freeze state.
   * [x] **Posing = combination of both:**
     * [x] live hand tracking - a **clenched-fist gesture freezes** motion (`fistFactor` metric, threshold 0.6, drives the existing Motion Freeze);
     * [x] **Snímek button** captures the current stage as a PNG frame;
-    * [ ] manual fine-tuning - drag rig part pivots directly on the stage (Pixi interactivity).
+    * [x] **manual fine-tuning** - drag rig part pivots directly on the stage with the mouse (Pixi `eventMode`; arms/legs/head rotate around their joint, body moves the whole puppet; movable respects the config flag; auto pose update is suspended while a part is dragged).
   * [x] Frame strip with thumbnails: select, delete, **duplicate**, reorder (&larr;/&rarr;).
   * [x] **Onion skin** (ghost of the selected frame at 40% alpha behind the live stage; toggle button).
 * **Phase 2 - Playback & export (all three formats):**

@@ -1,5 +1,5 @@
-import { Application, Container, Sprite, Graphics, Assets, Texture, Text, TextStyle } from 'pixi.js';
-import { HandState, clamp, shortestAngleDelta, spreadFactor } from './gestures';
+import { Application, Container, Sprite, Graphics, Assets, Texture, Text, TextStyle, FederatedPointerEvent } from 'pixi.js';
+import { HandState, clamp, shortestAngleDelta, spreadFactor, Point2D } from './gestures';
 import { CutoutRigConfig, armRotation } from './rig';
 import { RigRenderParts, buildRigParts, fetchRigConfig, loadLocalCharacterConfig } from './rigAssets';
 
@@ -37,6 +37,23 @@ interface DynamicPuppet {
   rig?: RigPuppetState;
 }
 
+type RigPartKey = 'body' | 'leftArm' | 'rightArm' | 'leftLeg' | 'rightLeg' | 'head';
+
+interface PartDragInfo {
+  puppet: DynamicPuppet;
+  part: RigPartKey;
+}
+
+interface ActiveDrag {
+  puppet: DynamicPuppet;
+  part: RigPartKey;
+  sprite?: Sprite;
+  startPointer: Point2D;
+  startRotation: number;
+  startContainerPos: Point2D;
+  jointGlobal: Point2D;
+}
+
 export class PuppetRenderer {
   private app: Application;
 
@@ -62,6 +79,11 @@ export class PuppetRenderer {
 
   // Motion Freeze
   private isFrozen: boolean = false;
+
+  // Manual pose editing (stop-motion fine-tuning): drag rig parts directly.
+  private poseEditing: boolean = false;
+  private dragInfo: Map<Sprite, PartDragInfo> = new Map();
+  private activeDrag: ActiveDrag | null = null;
 
   private width: number;
   private height: number;
@@ -162,6 +184,112 @@ export class PuppetRenderer {
    */
   public setFrozen(frozen: boolean): void {
     this.isFrozen = frozen;
+  }
+
+  /**
+   * Enables/disables manual pose editing (stop-motion fine-tuning). When
+   * enabled, rig parts marked movable in their config can be dragged with the
+   * mouse: arms/legs/head rotate around their joint pivot, the body moves the
+   * whole puppet. While a part is being dragged the auto pose update for that
+   * puppet is suspended so the drag is never overwritten by hand input.
+   */
+  public setPoseEditing(enabled: boolean): void {
+    this.poseEditing = enabled;
+    this.dragInfo.clear();
+
+    for (const puppet of [this.leftPuppet, this.rightPuppet]) {
+      if (!puppet.rig) continue;
+      const { parts, config } = puppet.rig;
+
+      const entries: Array<{ sprite?: Sprite; part: RigPartKey; movable: boolean }> = [
+        { sprite: parts.bodySprite, part: 'body', movable: true },
+        { sprite: parts.leftArmSprite, part: 'leftArm', movable: !!config.parts.leftArm.movable },
+        { sprite: parts.rightArmSprite, part: 'rightArm', movable: !!config.parts.rightArm.movable },
+        { sprite: parts.leftLegSprite, part: 'leftLeg', movable: !!config.parts.leftLeg?.movable },
+        { sprite: parts.rightLegSprite, part: 'rightLeg', movable: !!config.parts.rightLeg?.movable },
+        { sprite: parts.headSprite, part: 'head', movable: !!config.parts.head?.movable },
+      ];
+
+      for (const entry of entries) {
+        if (!entry.sprite) continue;
+        const sprite = entry.sprite;
+        sprite.eventMode = enabled && entry.movable ? 'static' : 'none';
+        sprite.cursor = enabled && entry.movable ? 'pointer' : 'default';
+        if (enabled) {
+          this.dragInfo.set(sprite, { puppet, part: entry.part });
+          sprite.on('pointerdown', this.onPartPointerDown);
+        } else {
+          sprite.off('pointerdown', this.onPartPointerDown);
+        }
+      }
+    }
+
+    if (enabled) {
+      this.app.stage.eventMode = 'static';
+      this.app.stage.on('pointermove', this.onStagePointerMove);
+      this.app.stage.on('pointerup', this.onStagePointerUp);
+      this.app.stage.on('pointerupoutside', this.onStagePointerUp);
+    } else {
+      this.app.stage.off('pointermove', this.onStagePointerMove);
+      this.app.stage.off('pointerup', this.onStagePointerUp);
+      this.app.stage.off('pointerupoutside', this.onStagePointerUp);
+      this.endDrag();
+    }
+  }
+
+  private onPartPointerDown = (e: FederatedPointerEvent): void => {
+    if (!this.poseEditing) return;
+    const sprite = e.currentTarget as Sprite;
+    const info = this.dragInfo.get(sprite);
+    if (!info) return;
+
+    if (info.part === 'body') {
+      this.activeDrag = {
+        puppet: info.puppet,
+        part: info.part,
+        startPointer: { x: e.global.x, y: e.global.y },
+        startRotation: 0,
+        startContainerPos: { x: info.puppet.container.position.x, y: info.puppet.container.position.y },
+        jointGlobal: { x: 0, y: 0 },
+      };
+    } else {
+      const joint = sprite.getGlobalPosition();
+      this.activeDrag = {
+        puppet: info.puppet,
+        part: info.part,
+        sprite,
+        startPointer: { x: e.global.x, y: e.global.y },
+        startRotation: sprite.rotation,
+        startContainerPos: { x: info.puppet.container.position.x, y: info.puppet.container.position.y },
+        jointGlobal: { x: joint.x, y: joint.y },
+      };
+    }
+  };
+
+  private onStagePointerMove = (e: FederatedPointerEvent): void => {
+    const drag = this.activeDrag;
+    if (!drag) return;
+
+    if (drag.part === 'body') {
+      drag.puppet.container.position.set(
+        drag.startContainerPos.x + (e.global.x - drag.startPointer.x),
+        drag.startContainerPos.y + (e.global.y - drag.startPointer.y)
+      );
+      return;
+    }
+
+    if (!drag.sprite) return;
+    const angle = Math.atan2(e.global.y - drag.jointGlobal.y, e.global.x - drag.jointGlobal.x);
+    const angle0 = Math.atan2(drag.startPointer.y - drag.jointGlobal.y, drag.startPointer.x - drag.jointGlobal.x);
+    drag.sprite.rotation = drag.startRotation + (angle - angle0);
+  };
+
+  private onStagePointerUp = (): void => {
+    this.endDrag();
+  };
+
+  private endDrag(): void {
+    this.activeDrag = null;
   }
 
   public updateThereminVisuals(
@@ -275,6 +403,10 @@ export class PuppetRenderer {
 
     // Cut-out rig: move body with the palm, swing movable parts around their joints.
     if (puppet.rig) {
+      // While a part of this puppet is being dragged manually, the auto pose
+      // update must not overwrite the drag.
+      if (this.activeDrag && this.activeDrag.puppet === puppet) return;
+
       const { config, parts, maxArmDelta } = puppet.rig;
       const bw = parts.bodySprite.texture.width;
       const bh = parts.bodySprite.texture.height;
