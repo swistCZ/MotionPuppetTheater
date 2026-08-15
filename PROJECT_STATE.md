@@ -2,7 +2,7 @@
 
 ## 1. Overall Goal & Architecture
 * **Goal:** A client-side web application tracking laptop webcam hand movements via Google MediaPipe Hands to control interactive 2D puppet sprites rendered on a custom background canvas (Pixi.js).
-* **Branch:** `feat/pro-redesign` & `main`
+* **Branch:** `feat/pro-redesign`, `main`, & `feat/stop-motion`
 * **Tech Stack:**
   * **Frontend:** HTML5, CSS3, TypeScript, Vite
   * **CV / AI:** Google MediaPipe Hands (`@mediapipe/hands`) with same-origin WASM bundling (`public/mediapipe/`)
@@ -50,6 +50,31 @@
   1. User prepares separate part images (body, head, arms, legs) and assembles them via the builder; either hit `Uložit do prohlížeče` (character appears instantly in the app's list for that browser) or drop the exported `config.json` into `public/characters/<id>/` for the shared, site-wide list (the Vite plugin regenerates `index.json` automatically). Characters with a missing `config.json` or missing part images are auto-removed from the list at runtime.
   2. Optional: two-bone IK (elbows/knees) so arms bend instead of rotating rigidly at the shoulder.
   3. Optional: tune `ROT_DAMP` / `ROT_ALPHA` and `spreadFactor` range after real-camera playtesting.
+
+## 5. Roadmap: Stop-Motion Assistant Mode (`feat/stop-motion`)
+* **Idea:** a separate mode (toggle in the main bar) turning the theater into a **stop-motion animation assistant** - pose a rig puppet, snap a frame, nudge it, snap again, then play back and export. Branch: `feat/stop-motion` (new, not started). Nothing below is implemented yet.
+* **Phase 1 - Core mode:**
+  * Mode toggle in the main control bar switching to a dedicated stop-motion UI layer (keeps the live theater untouched).
+  * **Posing = combination of both:**
+    * live hand tracking - a **clenched-fist gesture freezes** both motion and capture (reuses existing Motion Freeze);
+    * **Snímek button** captures the current stage as a frame;
+    * **manual fine-tuning** - drag rig part pivots directly on the stage with the mouse for precise poses.
+  * Frame strip with thumbnails: select, delete, **duplicate**, reorder.
+  * **Onion skin** (ghost of previous frame; configurable 1-3 ghosts).
+* **Phase 2 - Playback & export (all three formats):**
+  * Frame playback at selectable fps (12/24).
+  * Export **WebM** (reuse `StageRecorder` during playback), **GIF**, and **PNG frames as ZIP**.
+* **Phase 3 - Background (two independent choices):**
+  * **Full-frame chroma key green** (uniform `#00B140`) so the whole image can be keyed out and composited into another scene/video.
+  * **Long horizontal image strip** loaded by the user - a viewport window over it, panned manually via a slider or **auto-advancing a fixed step per captured frame** (parallax / camera-pan feel).
+  * Background picker: strip | keyable green | (default).
+* **Phase 4 - Props / connected chains (leaves as first use-case):**
+  * Generic prop system: a chain of N connected, differently-sized elements (e.g. a garland of leaves) attached to the tracked hand point, with secondary flutter motion. Generalizable to ribbons, beads, branches, etc.
+* **Additional ideas (deferred):**
+  * Registration marks / grid overlay for aligning frames on top of each other (position/scale consistency).
+  * **A/B flip** - quick toggle between the previous and current frame to spot small movements (stop-motion classic).
+  * Undo/redo for frame delete/reorder actions.
+  * **Theremin as the soundtrack of the exported video.**
 
 ## 4. Known Issues / Technical Debt / Blockers
 * Builder exports data-URL images (self-contained single file, slightly larger JSON) - fine for dev; swap for file paths in `config.json` if bundle size matters.
