@@ -330,54 +330,57 @@ class AppManager {
     const uploadLeft = document.getElementById('upload-left-closed') as HTMLInputElement;
     const uploadRight = document.getElementById('upload-right-closed') as HTMLInputElement;
 
-    // Toggle Camera
+    // Toggle Camera. State convention shared with the other toggles:
+    // ON (running) = btn-primary, OFF = btn-secondary.
+    const setCameraButton = (state: 'off' | 'on' | 'starting'): void => {
+      btnCamera.classList.remove('btn-primary', 'btn-secondary');
+      if (state === 'on') {
+        btnCamera.textContent = 'Zastavit';
+        btnCamera.classList.add('btn-primary');
+      } else {
+        btnCamera.textContent = state === 'starting' ? 'Spouštění...' : 'Kamera';
+        btnCamera.classList.add('btn-secondary');
+      }
+    };
+
     btnCamera.addEventListener('click', async () => {
       if (this.tracker.getActiveState()) {
         this.tracker.stop();
-        btnCamera.textContent = 'Kamera';
-        btnCamera.classList.remove('btn-secondary');
-        btnCamera.classList.add('btn-primary');
+        setCameraButton('off');
         this.showStatus('Kamera byla zastavena.');
       } else {
-        btnCamera.textContent = 'Zastavit';
-        btnCamera.classList.remove('btn-primary');
-        btnCamera.classList.add('btn-secondary');
+        setCameraButton('starting');
         this.showStatus('Spouštění kamery...');
-
-        const resetButton = (): void => {
-          btnCamera.textContent = 'Kamera';
-          btnCamera.classList.remove('btn-secondary');
-          btnCamera.classList.add('btn-primary');
-        };
 
         try {
           const started = await this.tracker.start(
             (results) => this.handleTrackingResults(results),
             (err) => {
               this.showStatus(`Chyba kamery: ${err.message}`);
-              resetButton();
+              setCameraButton('off');
             }
           );
-          // Only clear the banner on success — on failure the error callback
-          // already reported the problem and reset the button.
           if (started) {
+            setCameraButton('on');
             this.hideStatus();
+          } else {
+            setCameraButton('off');
           }
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           this.showStatus(`Chyba kamery: ${message}`);
-          resetButton();
+          setCameraButton('off');
         }
       }
     });
 
-    // Toggle Stage Video Recording
+    // Toggle Stage Video Recording. ON (recording) = btn-danger.
     btnRecord.addEventListener('click', () => {
       if (this.recorder.getIsRecording()) {
         this.recorder.stop();
         btnRecord.textContent = 'Nahrávat';
-        btnRecord.classList.remove('btn-secondary');
-        btnRecord.classList.add('btn-danger');
+        btnRecord.classList.remove('btn-danger');
+        btnRecord.classList.add('btn-secondary');
         this.recBadge.classList.add('hidden');
         this.showStatus('Nahrávání dokončeno. Ukládám video na disk...');
         setTimeout(() => this.hideStatus(), 3000);
@@ -393,8 +396,8 @@ class AppManager {
 
         if (started) {
           btnRecord.textContent = 'Uložit';
-          btnRecord.classList.remove('btn-danger');
-          btnRecord.classList.add('btn-secondary');
+          btnRecord.classList.remove('btn-secondary');
+          btnRecord.classList.add('btn-danger');
           this.recBadge.classList.remove('hidden');
           this.showStatus('Spuštěno nahrávání videa divadla v 60 FPS...');
           setTimeout(() => this.hideStatus(), 3000);
@@ -611,7 +614,7 @@ class AppManager {
     smBtnLeaves.addEventListener('click', () => {
       const active = this.renderer.isChainPropEnabled();
       this.renderer.setChainPropEnabled(!active);
-      smBtnLeaves.classList.toggle('btn-primary', !active);
+      smBtnLeaves.classList.toggle('btn-primary', active);
       this.showStatus(!active ? 'Řetěz listí zapnut — sleduje ruku.' : 'Řetěz listí vypnut.');
       setTimeout(() => this.hideStatus(), 2000);
     });
