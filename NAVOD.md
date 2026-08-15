@@ -55,7 +55,9 @@ Vzdálenost ruky od kamery se automaticky kompenzuje šířkou dlaně — gesta 
 
 ## 4. Stop-motion režim
 
-Zapni **Stop-motion** — dole se objeví časová osa. Princip: napózuj, ulož snímek, pohnu, ulož další, pak přehraj a exportuj.
+Zapni **Stop-motion** — dole se objeví časová osa. Figurky se okamžitě zobrazí na výchozích pozicích (i bez kamery), takže víš, co pózuješ. Dokud neuložíš první snímek, na scéně je nápověda s postupem. Pozadí se v tomto režimu ovládá **jen spodním panelem** (horní skupina „Scéna" se skryje, aby se ovládání nezdvojovalo). Princip: napózuj, ulož snímek, pohnu, ulož další, pak přehraj a exportuj.
+
+> Pozor: vybrané pozadí se promítne až do **nově** uložených snímků — starší snímky si zachovají pozadí, se kterým vznikly.
 
 ### Gesta a manipulace
 

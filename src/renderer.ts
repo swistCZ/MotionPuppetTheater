@@ -718,6 +718,50 @@ export class PuppetRenderer {
     return handType === 'Left' ? this.lastLeftState : this.lastRightState;
   }
 
+  /**
+   * Places puppets at sensible default spots (stop-motion entry) so they are
+   * visible before any hand is tracked. Only slots without live tracking and
+   * with an actual puppet preset are touched, so a running camera is never
+   * overridden mid-pose.
+   */
+  public placePuppetsAtDefaults(): void {
+    if (this.leftPuppet.preset !== 'none' && !this.lastLeftState) {
+      this.posePuppetNeutral(this.leftPuppet, this.width * 0.35, this.height * 0.62);
+    }
+    if (this.rightPuppet.preset !== 'none' && !this.lastRightState) {
+      this.posePuppetNeutral(this.rightPuppet, this.width * 0.65, this.height * 0.62);
+    }
+  }
+
+  /** Renders a neutral resting pose at the given position by feeding the
+   * puppet a synthetic hand state, so a never-tracked puppet still shows all
+   * its limbs (not just torso and head). */
+  private posePuppetNeutral(puppet: DynamicPuppet, x: number, y: number): void {
+    const neutral: HandState = {
+      handType: 'Left',
+      wristPosition: { x: 0.5, y: 0.5 },
+      rawPositionPixels: { x, y },
+      smoothedPosition: { x, y },
+      pinchDistance: 0.1,
+      isPinching: false,
+      mouthOpenRatio: 0.5,
+      fingerSplay: 0.5,
+      fistFactor: 0,
+      middleFingerFactor: 0,
+      rotation: -Math.PI / 2,
+      limbs: {
+        head: { x: 0, y: -70 },
+        leftArm: { x: -60, y: 10 },
+        rightArm: { x: 60, y: 10 },
+        leftLeg: { x: -22, y: 62 },
+        rightLeg: { x: 22, y: 62 },
+      },
+    };
+    if (puppet === this.leftPuppet) this.lastLeftState = neutral;
+    else this.lastRightState = neutral;
+    this.updateHandState(neutral);
+  }
+
   public async setCustomPuppetDataUrl(handType: 'Left' | 'Right', dataUrl: string): Promise<void> {
     try {
       let texture: Texture;

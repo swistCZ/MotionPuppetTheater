@@ -120,6 +120,12 @@ body {
   flex-shrink: 0;
 }
 
+/* The scene/background group is hidden while stop-motion mode is active -
+   the bottom panel is the single place for background controls then. */
+.control-group.hidden {
+  display: none;
+}
+
 .compact-label {
   font-size: 0.8rem;
   font-weight: 600;
@@ -571,4 +577,41 @@ body {
   background: rgba(255, 255, 255, 0.08);
   padding: 1px 5px;
   border-radius: 4px;
+}
+
+/* Stop-motion onboarding hint shown until the first frame is snapped. */
+.sm-empty-hint {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 5;
+  max-width: 540px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 18px 26px;
+  text-align: center;
+  color: var(--text-light);
+  opacity: 0.9;
+  pointer-events: none;
+  background: rgba(22, 27, 34, 0.6);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.sm-empty-hint.hidden {
+  display: none;
+}
+
+.sm-empty-hint p {
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.sm-empty-hint .sm-empty-hint-strong {
+  font-weight: 700;
+  color: var(--accent-blue);
 }

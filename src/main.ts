@@ -50,6 +50,7 @@ class AppManager {
   private fistFreezeActive: boolean = false;
   private smStripOffset: number = 0;
   private smStripActive: boolean = false;
+  private smEmptyHint: HTMLElement;
   private advanceStripAfterSnap: () => void = () => {};
 
   // Real-time Display FPS Loop
@@ -70,6 +71,7 @@ class AppManager {
     this.statusBanner = document.getElementById('status-banner') as HTMLElement;
     this.fpsBadge = document.getElementById('fps-badge') as HTMLElement;
     this.recBadge = document.getElementById('rec-badge') as HTMLElement;
+    this.smEmptyHint = document.getElementById('sm-empty-hint') as HTMLElement;
 
     const stageContainer = document.getElementById('pixi-viewport') as HTMLElement;
     const width = stageContainer.clientWidth || window.innerWidth;
@@ -273,6 +275,11 @@ class AppManager {
       }
       this.renderer.setZoomTarget(zoomTarget);
 
+      // Guide the user until the first frame exists: explain how to pose and
+      // that Snímek (or Space) captures the frame.
+      const wantHint = this.stopMotionActive && this.stopMotion.getFrameCount() === 0;
+      this.smEmptyHint.classList.toggle('hidden', !wantHint);
+
       requestAnimationFrame(loop);
     };
     requestAnimationFrame(loop);
@@ -448,6 +455,7 @@ class AppManager {
 
     // Toggle Stop-Motion mode
     const btnStopMotion = document.getElementById('btn-stop-motion') as HTMLButtonElement;
+    const sceneGroup = document.querySelector('.scene-group') as HTMLElement;
     btnStopMotion.addEventListener('click', () => {
       this.stopMotionActive = !this.stopMotionActive;
       this.stopMotion.setModeActive(this.stopMotionActive);
@@ -458,11 +466,18 @@ class AppManager {
         btnStopMotion.classList.remove('btn-secondary');
         btnStopMotion.classList.add('btn-primary');
         this.resizeStopMotionOverlays();
+        // Make the puppets visible right away (resting pose) so the user sees
+        // what they are posing before any hand is tracked.
+        this.renderer.placePuppetsAtDefaults();
+        // The bottom panel owns the background controls while in this mode,
+        // so hide the duplicated top-bar scene group.
+        sceneGroup.classList.add('hidden');
         this.showStatus('Stop-motion: pěst = zamknutí pózy, prostředníček = zoom, tažením myší doladíš díly, Snímek = uložit.');
       } else {
         btnStopMotion.textContent = 'Stop-motion';
         btnStopMotion.classList.remove('btn-primary');
         btnStopMotion.classList.add('btn-secondary');
+        sceneGroup.classList.remove('hidden');
         this.fistFreezeActive = false;
         this.renderer.setFrozen(this.isMotionFrozen);
         this.showStatus('Stop-motion režim vypnut.');

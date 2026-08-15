@@ -54,7 +54,7 @@
           </label>
         </div>
 
-        <div class="control-group">
+        <div class="control-group scene-group">
           <label for="bg-color" class="compact-label">Scéna:</label>
           <select id="bg-color" class="select-input">
             <option value="0x1e1e2e">Tmavá</option>
@@ -88,6 +88,13 @@
 
         <!-- Stop-Motion Registration Grid Overlay -->
         <canvas id="sm-grid-canvas" class="sm-grid-canvas"></canvas>
+
+        <!-- Stop-Motion onboarding hint (visible until the first frame) -->
+        <div id="sm-empty-hint" class="sm-empty-hint hidden">
+          <p>Figurka sleduje dlaň ruky, prsty ovládají paže, nohy a hlavu. Figurku můžeš i táhnout myší (pohyblivé části).</p>
+          <p>Pěst zamkne pózu, vztyčený prostředníček scénu přiblíží.</p>
+          <p class="sm-empty-hint-strong">Zmáčkni Snímek (nebo mezerník) pro uložení prvního snímku.</p>
+        </div>
 
         <!-- Status Banner -->
         <div id="status-banner" class="status-banner hidden"></div>
