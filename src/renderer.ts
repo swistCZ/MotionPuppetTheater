@@ -180,6 +180,16 @@ export class PuppetRenderer {
     return this.app.canvas as HTMLCanvasElement;
   }
 
+  /** Captures a clean PNG snapshot of the stage with edit handles temporarily hidden. */
+  public captureStageDataUrl(): string {
+    this.setEditHandlesVisible(false);
+    this.app.renderer.render(this.app.stage);
+    const canvas = this.app.canvas as HTMLCanvasElement;
+    const dataUrl = canvas.toDataURL('image/png');
+    this.setEditHandlesVisible(true);
+    return dataUrl;
+  }
+
   /** Forces a single present of the current scene (used before toDataURL). */
   public renderNow(): void {
     this.app.renderer.render(this.app.stage);
