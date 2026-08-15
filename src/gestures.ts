@@ -27,6 +27,7 @@ export interface HandState {
   mouthOpenRatio: number; // Driven 100% exclusively by index finger flexion
   fingerSplay: number; // Continuous 0.0 (fist/together) to 1.0 (spread fingers)
   fistFactor: number; // 0.0 (open hand) to 1.0 (tight fist) - used to freeze poses
+  middleFingerFactor: number; // 0.0 (no gesture) to 1.0 (middle finger up, others curled) - camera zoom
   rotation: number; // Angle in radians
   limbs: LimbOffsets; // Dynamic 5-finger articulated limb positions
 }
@@ -89,6 +90,27 @@ export function spreadFactor(splay: number): number {
 export function fistFactor(avgTipDistance: number, palmWidth: number): number {
   const ratio = palmWidth > 0.02 ? avgTipDistance / palmWidth : 1.0;
   return clamp(1 - (ratio - 0.3) / 0.7, 0, 1);
+}
+
+/**
+ * Zoom gesture: how clearly the "middle finger up" pose is being made
+ * (0 = not at all, 1 = clearly). The middle fingertip must be extended while
+ * the other fingertips (index, ring, pinky) stay curled. Distances are
+ * normalized by palm width so the gesture is independent of camera distance.
+ * An extended middle tip holds ~1.0-1.4x palm width away from the palm center;
+ * curled fingers tuck in to ~0.3-0.6x.
+ */
+export function middleFingerFactor(
+  middleTipDistance: number,
+  otherTipsDistance: number,
+  palmWidth: number
+): number {
+  if (palmWidth <= 0.02) return 0;
+  const middleRatio = middleTipDistance / palmWidth;
+  const othersRatio = otherTipsDistance / palmWidth;
+  const extended = clamp((middleRatio - 0.85) / 0.45, 0, 1);
+  const curled = clamp(1 - (othersRatio - 0.5) / 0.4, 0, 1);
+  return extended * curled;
 }
 
 /**
@@ -334,6 +356,19 @@ export function processHandLandmarks(
     4;
   const fistValue = fistFactor(avgTipDistance, palmWidth);
 
+  // Zoom gesture: middle finger extended while the other fingertips are
+  // curled. Drives the stop-motion camera zoom.
+  const otherTipsDistance =
+    (calculateDistance2D(indexTip, palmCenter) +
+      calculateDistance2D(ringTip, palmCenter) +
+      calculateDistance2D(pinkyTip, palmCenter)) /
+    3;
+  const middleFingerValue = middleFingerFactor(
+    calculateDistance2D(middleTip, palmCenter),
+    otherTipsDistance,
+    palmWidth
+  );
+
   // Rotation angle
   const rotation = calculateAngleRadians(
     { x: wrist.x, y: wrist.y },
@@ -350,6 +385,7 @@ export function processHandLandmarks(
     mouthOpenRatio,
     fingerSplay,
     fistFactor: fistValue,
+    middleFingerFactor: middleFingerValue,
     rotation,
     limbs,
   };

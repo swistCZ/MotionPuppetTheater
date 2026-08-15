@@ -5,6 +5,7 @@ import {
   shortestAngleDelta,
   spreadFactor,
   fistFactor,
+  middleFingerFactor,
   limbScale,
   LIMB_SCALE_MIN,
   LIMB_SCALE_MAX,
@@ -79,6 +80,23 @@ describe('gestures math & matching module', () => {
     expect(fistFactor(0, 1.0)).toBe(1);      // degenerate -> clamped fist
     expect(fistFactor(10, 1.0)).toBe(0);     // huge distance -> clamped open
     expect(fistFactor(0.5, 0.01)).toBe(0);   // unreliable palm -> open fallback
+  });
+
+  it('middleFingerFactor reads a raised middle finger as 1 and open hand as 0', () => {
+    // Raised middle finger: middle tip far out, others curled in.
+    expect(middleFingerFactor(1.3, 0.35, 1.0)).toBeCloseTo(1);
+    // Open hand: middle tip extended but so are the other fingertips.
+    expect(middleFingerFactor(1.2, 1.1, 1.0)).toBeCloseTo(0);
+    // Relaxed fist: middle finger tucked too.
+    expect(middleFingerFactor(0.35, 0.35, 1.0)).toBeCloseTo(0);
+  });
+
+  it('middleFingerFactor interpolates and falls back on unreliable palms', () => {
+    // Half-raised middle finger.
+    expect(middleFingerFactor(1.15, 0.4, 1.0)).toBeGreaterThan(0.4);
+    expect(middleFingerFactor(1.15, 0.4, 1.0)).toBeLessThan(1);
+    // Degenerate palm width -> no gesture.
+    expect(middleFingerFactor(1.3, 0.35, 0.01)).toBe(0);
   });
 
   it('calculateDistance2D and calculateAngleRadians compute distance and angle', () => {

@@ -106,6 +106,7 @@ export class HandSimulator {
       mouthOpenRatio: 0.5 + 0.5 * Math.sin(t * 1.8 + phase),
       fingerSplay: 0.5,
       fistFactor: 0,
+      middleFingerFactor: 0,
       // Simulated "hand upright" base angle so the renderer's mild in-plane
       // rotation keeps the puppet level instead of leaning it.
       rotation: -Math.PI / 2,

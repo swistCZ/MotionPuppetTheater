@@ -18,6 +18,8 @@ export interface StopMotionElements {
   btnLeft: HTMLButtonElement;
   btnRight: HTMLButtonElement;
   btnPlay: HTMLButtonElement;
+  btnLoop: HTMLButtonElement;
+  btnReverse: HTMLButtonElement;
   btnOnion: HTMLButtonElement;
   btnGrid: HTMLButtonElement;
   btnAb: HTMLButtonElement;
@@ -57,6 +59,8 @@ export class StopMotionController {
   private playing: boolean = false;
   private playTimer: number | null = null;
   private playIndex: number = 0;
+  private loopPlayback: boolean = true;
+  private reversePlayback: boolean = false;
   private exporting: boolean = false;
   private modeActive: boolean = false;
   private abMode: boolean = false;
@@ -86,6 +90,15 @@ export class StopMotionController {
     this.elements.btnPlay.addEventListener('click', () => {
       if (this.playing) this.stopPlayback();
       else void this.startPlayback();
+    });
+    this.elements.btnLoop.addEventListener('click', () => {
+      this.loopPlayback = !this.loopPlayback;
+      this.elements.btnLoop.classList.toggle('btn-primary', this.loopPlayback);
+    });
+    this.elements.btnReverse.addEventListener('click', () => {
+      this.reversePlayback = !this.reversePlayback;
+      this.elements.btnReverse.classList.toggle('btn-primary', this.reversePlayback);
+      if (this.playing) this.restartPlayback();
     });
     this.elements.btnOnion.addEventListener('click', () => this.toggleOnion());
     this.elements.btnGrid.addEventListener('click', () => this.toggleGrid());
@@ -401,11 +414,29 @@ export class StopMotionController {
 
     const fps = parseInt(this.elements.fpsSelect.value, 10) || 24;
     this.elements.playCanvas.classList.add('active');
-    this.playIndex = 0;
+    this.playIndex = this.reversePlayback ? images.length - 1 : 0;
     this.drawPlayFrame(images);
 
     this.playTimer = window.setInterval(() => {
-      this.playIndex = (this.playIndex + 1) % images.length;
+      if (this.reversePlayback) {
+        this.playIndex -= 1;
+        if (this.playIndex < 0) {
+          if (!this.loopPlayback) {
+            this.stopPlayback();
+            return;
+          }
+          this.playIndex = images.length - 1;
+        }
+      } else {
+        this.playIndex += 1;
+        if (this.playIndex >= images.length) {
+          if (!this.loopPlayback) {
+            this.stopPlayback();
+            return;
+          }
+          this.playIndex = 0;
+        }
+      }
       this.drawPlayFrame(images);
     }, 1000 / fps);
   }
@@ -701,6 +732,8 @@ export class StopMotionController {
     this.elements.btnDelete.disabled = busy || !hasSelection;
     this.elements.btnDuplicate.disabled = busy || !hasSelection;
     this.elements.btnPlay.disabled = busy || count === 0;
+    this.elements.btnLoop.disabled = busy || count === 0;
+    this.elements.btnReverse.disabled = busy || count === 0;
     this.elements.btnLeft.disabled = busy || !hasSelection || this.selectedIndex === 0;
     this.elements.btnRight.disabled = busy || !hasSelection || this.selectedIndex === count - 1;
     this.elements.btnUndo.disabled = busy || this.undoStack.length === 0;

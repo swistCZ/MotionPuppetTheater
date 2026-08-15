@@ -77,7 +77,16 @@ export class PuppetRenderer {
   private bgGraphics: Graphics;
   private bgSprite: Sprite | null = null;
   private bgTiling: TilingSprite | null = null;
+  private bgTilingNear: TilingSprite | null = null;
+  private stripOffset: number = 0;
+  private stripParallaxFactor: number = 1.6;
   private currentBgColorHex: number = 0x2d3748;
+
+  // Camera zoom (stop-motion middle-finger gesture). Applied only to the
+  // "world" layer so backgrounds always stay fullscreen and never expose gaps.
+  private worldContainer: Container;
+  private zoom: number = 1;
+  private targetZoom: number = 1;
 
   // Motion Freeze
   private isFrozen: boolean = false;
@@ -99,6 +108,7 @@ export class PuppetRenderer {
     this.app = new Application();
 
     this.bgGraphics = new Graphics();
+    this.worldContainer = new Container();
     this.leftPuppet = this.createEmptyPuppet('fox');
     this.rightPuppet = this.createEmptyPuppet('robot');
 
@@ -139,9 +149,14 @@ export class PuppetRenderer {
     this.app.stage.addChild(this.bgGraphics);
     this.drawDefaultBackground(this.currentBgColorHex);
 
+    // The world layer holds everything the stop-motion camera zoom affects
+    // (puppets, theremin orbs, chain prop). Backgrounds stay on the stage so
+    // zooming in never reveals gaps at the screen edges.
+    this.app.stage.addChild(this.worldContainer);
+
     // Add puppet containers
-    this.app.stage.addChild(this.leftPuppet.container);
-    this.app.stage.addChild(this.rightPuppet.container);
+    this.worldContainer.addChild(this.leftPuppet.container);
+    this.worldContainer.addChild(this.rightPuppet.container);
 
     // Add Theremin container
     this.thereminContainer.addChild(this.leftThereminOrb);
@@ -149,13 +164,14 @@ export class PuppetRenderer {
     this.thereminContainer.addChild(this.leftThereminText);
     this.thereminContainer.addChild(this.rightThereminText);
     this.thereminContainer.visible = false;
-    this.app.stage.addChild(this.thereminContainer);
+    this.worldContainer.addChild(this.thereminContainer);
 
     // Chain prop (leaves/garland) rendered on top, driven by the ticker.
     this.chainProp = new ChainProp();
-    this.app.stage.addChild(this.chainProp.getContainer());
+    this.worldContainer.addChild(this.chainProp.getContainer());
     this.chainProp.setEnabled(false);
     this.app.ticker.add((ticker) => this.updateChain(ticker.deltaMS));
+    this.app.ticker.add(() => this.updateZoom());
 
     // Initial position offscreen
     this.leftPuppet.container.position.set(-300, -300);
@@ -174,10 +190,20 @@ export class PuppetRenderer {
     if (this.bgSprite && this.bgSprite.visible) {
       this.bgSprite.width = this.width;
       this.bgSprite.height = this.height;
-    } else if (this.bgTiling && this.bgTiling.visible) {
+    }
+    if (this.bgTiling && this.bgTiling.visible) {
       this.bgTiling.width = this.width;
       this.bgTiling.height = this.height;
-    } else {
+    }
+    if (this.bgTilingNear && this.bgTilingNear.visible) {
+      this.bgTilingNear.width = this.width;
+      this.bgTilingNear.height = this.height;
+    }
+    const anyLayerVisible =
+      (this.bgSprite?.visible ?? false) ||
+      (this.bgTiling?.visible ?? false) ||
+      (this.bgTilingNear?.visible ?? false);
+    if (!anyLayerVisible) {
       this.drawDefaultBackground(this.currentBgColorHex);
     }
   }
@@ -217,6 +243,27 @@ export class PuppetRenderer {
     const anchor = this.lastLeftState?.smoothedPosition ?? this.lastRightState?.smoothedPosition;
     if (!anchor) return;
     this.chainProp.update(dtMs, anchor.x, anchor.y);
+  }
+
+  /**
+   * Smoothly eases the world layer toward the zoom target set by the
+   * stop-motion middle-finger gesture. Zooming pivots around the stage center,
+   * so the puppets magnify in place like a real camera dolly-in.
+   */
+  public setZoomTarget(target: number): void {
+    this.targetZoom = clamp(target, 1, 1.8);
+  }
+
+  private updateZoom(): void {
+    const delta = this.targetZoom - this.zoom;
+    if (Math.abs(delta) < 0.0005) {
+      this.zoom = this.targetZoom;
+    } else {
+      this.zoom += delta * 0.08;
+    }
+    this.worldContainer.scale.set(this.zoom);
+    this.worldContainer.pivot.set(this.width / 2, this.height / 2);
+    this.worldContainer.position.set(this.width / 2, this.height / 2);
   }
 
   /**
@@ -385,6 +432,9 @@ export class PuppetRenderer {
     if (this.bgTiling) {
       this.bgTiling.visible = false;
     }
+    if (this.bgTilingNear) {
+      this.bgTilingNear.visible = false;
+    }
     this.drawDefaultBackground(colorHex);
   }
 
@@ -411,30 +461,84 @@ export class PuppetRenderer {
 
       this.bgTiling.width = this.width;
       this.bgTiling.height = this.height;
-      this.bgTiling.tilePosition.x = 0;
       this.bgTiling.visible = true;
       this.bgGraphics.clear();
       if (this.bgSprite) this.bgSprite.visible = false;
+      this.stripOffset = 0;
+      this.updateStripOffsets();
     } catch (err) {
       console.error('Failed to load strip background image:', err);
     }
   }
 
-  /** Pans the visible window of the strip background by `offsetX` pixels. */
+  /** Pans the visible window(s) of the strip backgrounds. The near layer pans
+   * faster than the far layer by the configured parallax factor for depth. */
   public setStripOffset(offsetX: number): void {
+    this.stripOffset = offsetX;
+    this.updateStripOffsets();
+  }
+
+  /**
+   * Sets how much faster the near (foreground) strip pans than the far strip.
+   * 1.0 = locked together, >1 = near layer moves faster (depth illusion).
+   */
+  public setParallaxFactor(factor: number): void {
+    this.stripParallaxFactor = clamp(factor, 1, 5);
+    this.updateStripOffsets();
+  }
+
+  private updateStripOffsets(): void {
     if (this.bgTiling && this.bgTiling.visible) {
-      this.bgTiling.tilePosition.x = -offsetX;
+      this.bgTiling.tilePosition.x = -this.stripOffset;
+    }
+    if (this.bgTilingNear && this.bgTilingNear.visible) {
+      this.bgTilingNear.tilePosition.x = -this.stripOffset * this.stripParallaxFactor;
     }
   }
 
   public isStripActive(): boolean {
-    return !!this.bgTiling && this.bgTiling.visible;
+    return (!!this.bgTiling && this.bgTiling.visible) || (!!this.bgTilingNear && this.bgTilingNear.visible);
   }
 
-  /** Hides the strip and restores the default solid background. */
+  /** Hides both strips and restores the default solid background. */
   public clearStripBackground(): void {
     if (this.bgTiling) this.bgTiling.visible = false;
+    if (this.bgTilingNear) this.bgTilingNear.visible = false;
     this.drawDefaultBackground(this.currentBgColorHex);
+  }
+
+  /**
+   * Adds a second, "near" background strip that pans on top of the far strip.
+   * Its pan speed follows the far strip offset multiplied by the parallax
+   * factor, giving the scene depth when the window is panned.
+   */
+  public async setForegroundStripBackground(dataUrl: string): Promise<void> {
+    try {
+      let texture: Texture;
+      try {
+        texture = await Assets.load(dataUrl);
+      } catch {
+        texture = Texture.from(dataUrl);
+      }
+
+      if (!this.bgTilingNear) {
+        this.bgTilingNear = new TilingSprite({ texture, width: this.width, height: this.height });
+        // Layer order: far strip (0), near strip (1), solid graphics (2), world (3).
+        this.app.stage.addChildAt(this.bgTilingNear, 1);
+      } else {
+        this.bgTilingNear.texture = texture;
+      }
+
+      this.bgTilingNear.width = this.width;
+      this.bgTilingNear.height = this.height;
+      this.bgTilingNear.tilePosition.x = 0;
+      this.bgTilingNear.visible = true;
+      this.bgGraphics.clear();
+      if (this.bgSprite) this.bgSprite.visible = false;
+      this.updateStripOffsets();
+    } catch (err) {
+      console.error('Failed to load near strip background image:', err);
+    }
   }
 
   public async setCustomBackgroundDataUrl(dataUrl: string): Promise<void> {

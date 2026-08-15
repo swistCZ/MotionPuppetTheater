@@ -43,6 +43,7 @@
 * [x] **Camera/model error handling**: `tracker.start()` now resolves a `boolean` so the error banner is no longer instantly hidden by `hideStatus()`; a `try/catch` in the UI prevents a stuck "Zastavit" button when MediaPipe init fails; `initialize()` probes each source (`fetch(.../hands.js, HEAD)`) and the processing loop falls back to the next source after 60 consecutive `send()` failures.
 * [x] **Motion Freeze honored everywhere**: freeze is enforced inside `PuppetRenderer.updateHandState` (via `setFrozen`), so it now also locks puppets while the hand simulator is driving them.
 * [x] **Theremin full stop**: toggling off ramps the gain, then stops the oscillator and disconnects the gain graph + stream destination; the next toggle rebuilds the nodes.
+* [x] **Stop-motion polish pass** (branch `feat/stop-motion`): middle-finger camera zoom, two-layer strip parallax, custom background color, loop/reverse playback, registration grid, A/B flip, undo/redo, Theremin soundtrack in WebM export, onion ghost count 1-3, Space = snap, clear-all. 25 unit tests green.
 
 ## 3. Active Task & Next Steps
 * **Active Task:** Six-part rig + professional builder UI complete; preset cleanup, mild in-plane rotation, finger-splay limb spread, and the camera/model/freeze/theremin robustness fixes all shipped (build & 19 tests green). Character list is auto-generated (Vite plugin scans `public/characters/` for folders with a valid `config.json`; dev serves it live, build emits `index.json`). Waiting on user to re-cut the rabbit (and add dog, snail, etc.) into separate part files and assemble them via `/builder.html`.
@@ -72,6 +73,11 @@
   * [x] Background reset (`Výchozí`) restores the default solid color.
 * **Phase 4 - Props / connected chains (DONE, leaves as first use-case):**
   * [x] Generic **chain prop** (`src/chainProp.ts`): N connected leaves attached to the tracked hand point. Verlet physics give gravity + inertia (secondary motion), each leaf flutters with a phase-shifted sine, and leaves come in varying sizes. `Listí` button toggles it in the stop-motion panel; the chain anchors to the left (or right) hand. Generalizable to ribbons, beads, branches (swap the generated leaf texture / tune `DEFAULT_CHAIN_CONFIG`).
+* **Phase 5 - Camera moves, layered backgrounds & playback polish (DONE):**
+  * [x] **Middle-finger camera zoom**: `middleFingerFactor` gesture (middle tip extended while index/ring/pinky curl, normalized by palm width; unit tested). In stop-motion mode the factor smoothly zooms the world layer (puppets, theremin orbs, chain prop) up to 1.6x around the stage center - backgrounds stay fullscreen so zooming never exposes edge gaps (new `worldContainer`).
+  * [x] **Two-layer strip parallax**: a second, "near" strip (`Pruh 2`) pans on top of the far one; its offset = far offset x a configurable **Paralaxa** factor (default 1.6) for a depth illusion. Slider / `Krok` drive both layers together.
+  * [x] **Custom background color**: native color picker (`Barva`) for any solid backdrop alongside the chroma-green preset.
+  * [x] **Playback polish**: `Opakovat` (loop on/off) and `Zpětně` (reverse playback) toggles; with loop off the playback stops at the end instead of wrapping.
 * **Additional ideas (all implemented in this pass):**
   * [x] **Registration grid overlay** (`Mřížka`): light grid lines every 96px + center crosshair for aligning frames on top of each other (position/scale consistency).
   * [x] **A/B flip** (`A/B`): toggles between the live scene and the selected frame to spot small movements (stop-motion classic).

@@ -23,6 +23,12 @@ import { drawConnectors, drawLandmarks } from '@mediapipe/drawing_utils';
 // A clenched fist (>= this fistFactor) locks the pose while in stop-motion mode.
 const FIST_FREEZE_THRESHOLD = 0.6;
 
+// The raised-middle-finger gesture (>= this middleFingerFactor) zooms the
+// stage in while in stop-motion mode; above the threshold the factor maps
+// linearly up to ZOOM_MAX_AMOUNT of additional magnification.
+const ZOOM_GESTURE_THRESHOLD = 0.6;
+const ZOOM_MAX_AMOUNT = 0.6;
+
 class AppManager {
   private tracker: HandTracker;
   private renderer: PuppetRenderer;
@@ -88,6 +94,8 @@ class AppManager {
         btnLeft: document.getElementById('sm-btn-left') as HTMLButtonElement,
         btnRight: document.getElementById('sm-btn-right') as HTMLButtonElement,
         btnPlay: document.getElementById('sm-btn-play') as HTMLButtonElement,
+        btnLoop: document.getElementById('sm-btn-loop') as HTMLButtonElement,
+        btnReverse: document.getElementById('sm-btn-reverse') as HTMLButtonElement,
         btnOnion: document.getElementById('sm-btn-onion') as HTMLButtonElement,
         btnGrid: document.getElementById('sm-btn-grid') as HTMLButtonElement,
         btnAb: document.getElementById('sm-btn-ab') as HTMLButtonElement,
@@ -246,6 +254,24 @@ class AppManager {
           this.renderer.setFrozen(fistHeld);
         }
       }
+
+      // Camera zoom: raised middle finger zooms the stage in (stop-motion mode
+      // only). Outside the mode, or when the gesture is released, ease back to
+      // the normal 1.0 magnification.
+      let zoomTarget = 1;
+      if (this.stopMotionActive) {
+        const leftState = this.renderer.getLastHandState('Left');
+        const rightState = this.renderer.getLastHandState('Right');
+        const zoomFactor = Math.max(
+          leftState ? leftState.middleFingerFactor : 0,
+          rightState ? rightState.middleFingerFactor : 0
+        );
+        if (zoomFactor > ZOOM_GESTURE_THRESHOLD) {
+          const amount = ((zoomFactor - ZOOM_GESTURE_THRESHOLD) / (1 - ZOOM_GESTURE_THRESHOLD)) * ZOOM_MAX_AMOUNT;
+          zoomTarget = 1 + amount;
+        }
+      }
+      this.renderer.setZoomTarget(zoomTarget);
 
       requestAnimationFrame(loop);
     };
@@ -432,7 +458,7 @@ class AppManager {
         btnStopMotion.classList.remove('btn-secondary');
         btnStopMotion.classList.add('btn-primary');
         this.resizeStopMotionOverlays();
-        this.showStatus('Stop-motion: pěst = zamknutí pózy, tažením myší doladíš díly, Snímek = uložit.');
+        this.showStatus('Stop-motion: pěst = zamknutí pózy, prostředníček = zoom, tažením myší doladíš díly, Snímek = uložit.');
       } else {
         btnStopMotion.textContent = 'Stop-motion';
         btnStopMotion.classList.remove('btn-primary');
@@ -444,10 +470,13 @@ class AppManager {
       setTimeout(() => this.hideStatus(), 3000);
     });
 
-    // Stop-Motion background controls (chroma green / pan-able strip)
+    // Stop-Motion background controls (chroma green / custom color / pan-able strips)
     const smBtnGreen = document.getElementById('sm-btn-green') as HTMLButtonElement;
     const smBtnResetBg = document.getElementById('sm-btn-reset-bg') as HTMLButtonElement;
+    const smBgColor = document.getElementById('sm-bg-color') as HTMLInputElement;
     const smUploadStrip = document.getElementById('sm-upload-strip') as HTMLInputElement;
+    const smUploadStripNear = document.getElementById('sm-upload-strip-near') as HTMLInputElement;
+    const smParallax = document.getElementById('sm-parallax') as HTMLInputElement;
     const smPanSlider = document.getElementById('sm-pan') as HTMLInputElement;
 
     const resetStripState = (): void => {
@@ -462,6 +491,12 @@ class AppManager {
       this.renderer.setBackgroundColor(0x00b140);
       this.showStatus('Klíčovací zelená nastavena.');
       setTimeout(() => this.hideStatus(), 2000);
+    });
+
+    smBgColor.addEventListener('input', () => {
+      resetStripState();
+      const hexValue = parseInt(smBgColor.value.slice(1), 16);
+      this.renderer.setBackgroundColor(hexValue);
     });
 
     smBtnResetBg.addEventListener('click', () => {
@@ -483,11 +518,33 @@ class AppManager {
         smPanSlider.value = '0';
         smPanSlider.disabled = false;
         await this.renderer.setStripBackground(dataUrl);
-        this.showStatus('Pruh pozadí načten — posouvej posuvníkem nebo krokem na snímek.');
+        this.showStatus('Vzdálený pruh načten — posouvej posuvníkem nebo krokem na snímek.');
         setTimeout(() => this.hideStatus(), 3000);
       };
       reader.readAsDataURL(file);
       (e.target as HTMLInputElement).value = '';
+    });
+
+    smUploadStripNear.addEventListener('change', async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = async (evt) => {
+        const dataUrl = evt.target?.result as string;
+        if (!dataUrl) return;
+        this.smStripActive = true;
+        smPanSlider.disabled = false;
+        await this.renderer.setForegroundStripBackground(dataUrl);
+        this.showStatus('Blízký pruh načten — posouvá se rychleji (paralaxa).');
+        setTimeout(() => this.hideStatus(), 3000);
+      };
+      reader.readAsDataURL(file);
+      (e.target as HTMLInputElement).value = '';
+    });
+
+    smParallax.addEventListener('input', () => {
+      const factor = parseFloat(smParallax.value) || 1.6;
+      this.renderer.setParallaxFactor(factor);
     });
 
     smPanSlider.addEventListener('input', () => {
