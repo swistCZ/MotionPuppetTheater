@@ -4,6 +4,7 @@ import {
   clamp,
   shortestAngleDelta,
   spreadFactor,
+  fistFactor,
   limbScale,
   LIMB_SCALE_MIN,
   LIMB_SCALE_MAX,
@@ -62,6 +63,22 @@ describe('gestures math & matching module', () => {
     expect(limbScale(0.01)).toBe(250);    // below the reliable threshold
     expect(limbScale(0.5)).toBe(LIMB_SCALE_MIN); // huge palm -> min clamp
     expect(limbScale(0.021)).toBe(LIMB_SCALE_MAX); // tiny palm -> max clamp
+  });
+
+  it('fistFactor reads an open hand as 0 and a tight fist as 1', () => {
+    // Open hand: tips ~1.0x palm width away from the palm center.
+    expect(fistFactor(1.0, 1.0)).toBeCloseTo(0);
+    // Tight fist: tips tucked to ~0.35x palm width.
+    expect(fistFactor(0.35, 1.0)).toBeGreaterThan(0.9);
+    // Fully curled tips read as a maximal fist.
+    expect(fistFactor(0.3, 1.0)).toBeCloseTo(1);
+  });
+
+  it('fistFactor interpolates and clamps across the range', () => {
+    expect(fistFactor(0.65, 1.0)).toBeCloseTo(0.5);
+    expect(fistFactor(0, 1.0)).toBe(1);      // degenerate -> clamped fist
+    expect(fistFactor(10, 1.0)).toBe(0);     // huge distance -> clamped open
+    expect(fistFactor(0.5, 0.01)).toBe(0);   // unreliable palm -> open fallback
   });
 
   it('calculateDistance2D and calculateAngleRadians compute distance and angle', () => {

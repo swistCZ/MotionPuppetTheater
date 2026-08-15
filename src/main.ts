@@ -10,6 +10,7 @@ import { PuppetRenderer, PuppetPreset } from './renderer';
 import { ThereminSynth } from './theremin';
 import { StageRecorder } from './recorder';
 import { HandSimulator } from './simulator';
+import { StopMotionController } from './stopMotion';
 import {
   fetchRigConfig,
   fetchRigIdList,
@@ -19,12 +20,16 @@ import {
 import { Results, HAND_CONNECTIONS } from '@mediapipe/hands';
 import { drawConnectors, drawLandmarks } from '@mediapipe/drawing_utils';
 
+// A clenched fist (>= this fistFactor) locks the pose while in stop-motion mode.
+const FIST_FREEZE_THRESHOLD = 0.6;
+
 class AppManager {
   private tracker: HandTracker;
   private renderer: PuppetRenderer;
   private theremin: ThereminSynth;
   private recorder: StageRecorder;
   private simulator: HandSimulator;
+  private stopMotion: StopMotionController;
 
   private videoElement: HTMLVideoElement;
   private debugCanvas: HTMLCanvasElement;
@@ -35,6 +40,8 @@ class AppManager {
 
   private showDebugOverlay: boolean = false;
   private isMotionFrozen: boolean = false;
+  private stopMotionActive: boolean = false;
+  private fistFreezeActive: boolean = false;
 
   // Real-time Display FPS Loop
   private lastFrameTime: number = performance.now();
@@ -64,6 +71,23 @@ class AppManager {
     this.theremin = new ThereminSynth();
     this.recorder = new StageRecorder();
     this.simulator = new HandSimulator(this.renderer);
+    this.stopMotion = new StopMotionController(
+      () => this.renderer.getCanvasElement(),
+      {
+        panel: document.getElementById('sm-panel') as HTMLElement,
+        strip: document.getElementById('sm-frame-strip') as HTMLElement,
+        onionCanvas: document.getElementById('sm-onion-canvas') as HTMLCanvasElement,
+        playCanvas: document.getElementById('sm-play-canvas') as HTMLCanvasElement,
+        btnSnap: document.getElementById('sm-btn-snap') as HTMLButtonElement,
+        btnDelete: document.getElementById('sm-btn-delete') as HTMLButtonElement,
+        btnDuplicate: document.getElementById('sm-btn-duplicate') as HTMLButtonElement,
+        btnLeft: document.getElementById('sm-btn-left') as HTMLButtonElement,
+        btnRight: document.getElementById('sm-btn-right') as HTMLButtonElement,
+        btnPlay: document.getElementById('sm-btn-play') as HTMLButtonElement,
+        btnOnion: document.getElementById('sm-btn-onion') as HTMLButtonElement,
+        fpsSelect: document.getElementById('sm-fps') as HTMLSelectElement,
+      }
+    );
 
     this.init(stageContainer);
   }
@@ -72,6 +96,7 @@ class AppManager {
     await this.renderer.initialize(stageContainer);
 
     this.resizeCanvas();
+    this.resizeStopMotionOverlays();
     window.addEventListener('resize', () => this.onWindowResize());
 
     this.setupUIControls();
@@ -187,6 +212,20 @@ class AppManager {
         const volRatio = rightY !== undefined ? 1.0 - Math.max(0, Math.min(1, rightY)) : (leftY !== undefined ? 0.5 : 0);
 
         this.renderer.updateThereminVisuals(leftState, rightState, freq, volRatio);
+      }
+
+      // In stop-motion mode a clenched fist locks the pose so the user can
+      // snap a frame; releasing it unlocks so a new pose can be posed.
+      if (this.stopMotionActive) {
+        const leftState = this.renderer.getLastHandState('Left');
+        const rightState = this.renderer.getLastHandState('Right');
+        const fistHeld =
+          (leftState !== undefined && leftState.fistFactor >= FIST_FREEZE_THRESHOLD) ||
+          (rightState !== undefined && rightState.fistFactor >= FIST_FREEZE_THRESHOLD);
+        if (fistHeld !== this.fistFreezeActive) {
+          this.fistFreezeActive = fistHeld;
+          this.renderer.setFrozen(fistHeld);
+        }
       }
 
       requestAnimationFrame(loop);
@@ -361,6 +400,29 @@ class AppManager {
       this.simulator.start();
       setSimButton(true);
     }
+
+    // Toggle Stop-Motion mode
+    const btnStopMotion = document.getElementById('btn-stop-motion') as HTMLButtonElement;
+    btnStopMotion.addEventListener('click', () => {
+      this.stopMotionActive = !this.stopMotionActive;
+      this.stopMotion.setModeActive(this.stopMotionActive);
+
+      if (this.stopMotionActive) {
+        btnStopMotion.textContent = 'Stop-motion (ZAP)';
+        btnStopMotion.classList.remove('btn-secondary');
+        btnStopMotion.classList.add('btn-primary');
+        this.resizeStopMotionOverlays();
+        this.showStatus('Stop-motion: pěst = zamknutí pózy, Snímek = uložit snímek.');
+      } else {
+        btnStopMotion.textContent = 'Stop-motion';
+        btnStopMotion.classList.remove('btn-primary');
+        btnStopMotion.classList.add('btn-secondary');
+        this.fistFreezeActive = false;
+        this.renderer.setFrozen(this.isMotionFrozen);
+        this.showStatus('Stop-motion režim vypnut.');
+      }
+      setTimeout(() => this.hideStatus(), 3000);
+    });
 
     // Preset Selection
     selectLeftPuppet.addEventListener('change', async (e) => {
@@ -546,6 +608,14 @@ class AppManager {
     const width = stageContainer.clientWidth || window.innerWidth;
     const height = stageContainer.clientHeight || window.innerHeight;
     this.renderer.resize(width, height);
+    this.stopMotion.resize(width, height);
+  }
+
+  private resizeStopMotionOverlays(): void {
+    const stageContainer = document.getElementById('pixi-viewport') as HTMLElement;
+    const width = stageContainer.clientWidth || window.innerWidth;
+    const height = stageContainer.clientHeight || window.innerHeight;
+    this.stopMotion.resize(width, height);
   }
 
   private resizeCanvas(): void {

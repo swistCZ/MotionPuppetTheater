@@ -24,6 +24,7 @@
           <button id="btn-toggle-theremin" class="btn btn-secondary" title="Zapnout/vypnout Theremin zvuk">Theremin</button>
           <button id="btn-sim" class="btn btn-secondary" title="Simulace rukou bez kamery (tělo = myš, paže = animace)">Simulace</button>
           <a href="./builder.html" class="btn btn-secondary" title="Sestavit vlastní vystřihovánkovou loutku">Builder</a>
+          <button id="btn-stop-motion" class="btn btn-secondary" title="Přepnout do stop-motion režimu (snímání po snímcích)">Stop-motion</button>
         </div>
 
         <div class="control-group">
@@ -71,7 +72,9 @@
       <!-- Main Stage Container -->
       <main class="stage-container">
         <!-- PixiJS Canvas Parent -->
-        <div id="pixi-viewport"></div>
+        <div id="pixi-viewport">
+          <canvas id="sm-onion-canvas" class="sm-onion-canvas"></canvas>
+        </div>
 
         <!-- Hidden Video Element for MediaPipe input -->
         <video id="webcam-video" playsinline muted style="display: none;"></video>
@@ -79,8 +82,30 @@
         <!-- Debug Canvas Overlay for Landmarks -->
         <canvas id="debug-canvas" class="debug-overlay"></canvas>
 
+        <!-- Stop-Motion Playback Overlay (on top of the stage) -->
+        <canvas id="sm-play-canvas" class="sm-play-canvas"></canvas>
+
         <!-- Status Banner -->
         <div id="status-banner" class="status-banner hidden"></div>
+
+        <!-- Stop-Motion Timeline Panel -->
+        <section id="sm-panel" class="sm-panel hidden">
+          <div class="sm-controls">
+            <button id="sm-btn-snap" class="btn btn-danger" title="Uložit aktuální scénu jako snímek">Snímek</button>
+            <button id="sm-btn-delete" class="btn btn-secondary" title="Smazat vybraný snímek" disabled>Smazat</button>
+            <button id="sm-btn-duplicate" class="btn btn-secondary" title="Duplikovat vybraný snímek" disabled>Duplikovat</button>
+            <button id="sm-btn-left" class="btn btn-secondary" title="Posunout snímek doleva" disabled>&larr;</button>
+            <button id="sm-btn-right" class="btn btn-secondary" title="Posunout snímek doprava" disabled>&rarr;</button>
+            <button id="sm-btn-play" class="btn btn-secondary" title="Přehrát snímky" disabled>Přehrát</button>
+            <label class="compact-label" for="sm-fps">FPS</label>
+            <select id="sm-fps" class="select-input">
+              <option value="12">12</option>
+              <option value="24" selected>24</option>
+            </select>
+            <button id="sm-btn-onion" class="btn btn-secondary" title="Zapnout/vypnout průsvitný duch předchozího snímku">Onion</button>
+          </div>
+          <div id="sm-frame-strip" class="sm-frame-strip"></div>
+        </section>
       </main>
     </div>
 

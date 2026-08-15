@@ -54,13 +54,13 @@
 ## 5. Roadmap: Stop-Motion Assistant Mode (`feat/stop-motion`)
 * **Idea:** a separate mode (toggle in the main bar) turning the theater into a **stop-motion animation assistant** - pose a rig puppet, snap a frame, nudge it, snap again, then play back and export. Branch: `feat/stop-motion` (new, not started). Nothing below is implemented yet.
 * **Phase 1 - Core mode:**
-  * Mode toggle in the main control bar switching to a dedicated stop-motion UI layer (keeps the live theater untouched).
-  * **Posing = combination of both:**
-    * live hand tracking - a **clenched-fist gesture freezes** both motion and capture (reuses existing Motion Freeze);
-    * **Snímek button** captures the current stage as a frame;
-    * **manual fine-tuning** - drag rig part pivots directly on the stage with the mouse for precise poses.
-  * Frame strip with thumbnails: select, delete, **duplicate**, reorder.
-  * **Onion skin** (ghost of previous frame; configurable 1-3 ghosts).
+  * [x] Mode toggle (`Stop-motion` button in the main bar) showing the stop-motion timeline panel; live theater controls stay untouched. Exit restores the freeze state.
+  * [x] **Posing = combination of both:**
+    * [x] live hand tracking - a **clenched-fist gesture freezes** motion (`fistFactor` metric, threshold 0.6, drives the existing Motion Freeze);
+    * [x] **Snímek button** captures the current stage as a PNG frame;
+    * [ ] manual fine-tuning - drag rig part pivots directly on the stage (Pixi interactivity).
+  * [x] Frame strip with thumbnails: select, delete, **duplicate**, reorder (&larr;/&rarr;).
+  * [x] **Onion skin** (ghost of the selected frame at 40% alpha behind the live stage; toggle button).
 * **Phase 2 - Playback & export (all three formats):**
   * Frame playback at selectable fps (12/24).
   * Export **WebM** (reuse `StageRecorder` during playback), **GIF**, and **PNG frames as ZIP**.

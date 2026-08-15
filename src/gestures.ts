@@ -26,6 +26,7 @@ export interface HandState {
   isPinching: boolean; // True if mouth closed
   mouthOpenRatio: number; // Driven 100% exclusively by index finger flexion
   fingerSplay: number; // Continuous 0.0 (fist/together) to 1.0 (spread fingers)
+  fistFactor: number; // 0.0 (open hand) to 1.0 (tight fist) - used to freeze poses
   rotation: number; // Angle in radians
   limbs: LimbOffsets; // Dynamic 5-finger articulated limb positions
 }
@@ -76,6 +77,18 @@ export function shortestAngleDelta(a: number, b: number): number {
  */
 export function spreadFactor(splay: number): number {
   return lerp(0.7, 1.5, clamp(splay, 0, 1));
+}
+
+/**
+ * Fist detection: how curled the fingers are (0 = open hand, 1 = tight fist).
+ * `avgTipDistance` is the mean distance of the four fingertips (index, middle,
+ * ring, pinky) to the palm center, normalized by palm width so it is
+ * independent of camera distance. An open hand holds its tips ~1.0-1.4x palm
+ * width away; a fist tucks them in to ~0.3-0.5x.
+ */
+export function fistFactor(avgTipDistance: number, palmWidth: number): number {
+  const ratio = palmWidth > 0.02 ? avgTipDistance / palmWidth : 1.0;
+  return clamp(1 - (ratio - 0.3) / 0.7, 0, 1);
 }
 
 /**
@@ -311,6 +324,16 @@ export function processHandLandmarks(
   );
   const fingerSplay = clamp((indexPinkyDist - 0.1) / 0.25, 0.0, 1.0);
 
+  // Fist metric: mean fingertip distance to the palm center, normalized by
+  // palm width. A clenched fist drives the stop-motion pose freeze.
+  const avgTipDistance =
+    (calculateDistance2D(indexTip, palmCenter) +
+      calculateDistance2D(middleTip, palmCenter) +
+      calculateDistance2D(ringTip, palmCenter) +
+      calculateDistance2D(pinkyTip, palmCenter)) /
+    4;
+  const fistValue = fistFactor(avgTipDistance, palmWidth);
+
   // Rotation angle
   const rotation = calculateAngleRadians(
     { x: wrist.x, y: wrist.y },
@@ -326,6 +349,7 @@ export function processHandLandmarks(
     isPinching,
     mouthOpenRatio,
     fingerSplay,
+    fistFactor: fistValue,
     rotation,
     limbs,
   };
