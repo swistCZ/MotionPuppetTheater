@@ -180,36 +180,6 @@ export class PuppetRenderer {
     return this.app.canvas as HTMLCanvasElement;
   }
 
-  /** Captures both a full-resolution PNG and a fast 2D thumbnail canvas dataURL. */
-  public captureStageDataUrl(): { full: string; thumb: string } {
-    this.setEditHandlesVisible(false);
-    this.app.renderer.render(this.app.stage);
-    const canvas = this.app.canvas as HTMLCanvasElement;
-    let full = '';
-    try {
-      full = canvas.toDataURL('image/png');
-    } catch (e) {
-      console.warn('Direct toDataURL failed:', e);
-    }
-
-    let thumb = '';
-    try {
-      const thumbCanvas = document.createElement('canvas');
-      thumbCanvas.width = 160;
-      thumbCanvas.height = 112;
-      const ctx = thumbCanvas.getContext('2d');
-      if (ctx) {
-        ctx.drawImage(canvas, 0, 0, 160, 112);
-        thumb = thumbCanvas.toDataURL('image/png');
-      }
-    } catch (e) {
-      console.warn('Thumbnail drawImage failed:', e);
-    }
-
-    this.setEditHandlesVisible(true);
-    return { full: full || thumb, thumb: thumb || full };
-  }
-
   /** Forces a single present of the current scene (used before toDataURL). */
   public renderNow(): void {
     this.app.renderer.render(this.app.stage);
