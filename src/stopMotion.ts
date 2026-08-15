@@ -54,7 +54,7 @@ export interface StopMotionElements {
   onAfterSnap?: () => void;
   audioSource?: () => MediaStreamAudioDestinationNode | undefined;
   /** Capture clean stage dataURL without handles. */
-  captureStageDataUrl?: () => { full: string; thumb: string };
+  captureStageDataUrl?: () => string;
   /** Hide/show stop-motion edit handles around a capture. */
   setHandlesVisible?: (visible: boolean) => void;
   /** Force a Pixi present so toDataURL sees the latest frame. */
@@ -225,6 +225,9 @@ export class StopMotionController {
   // --- Timeline edits (all record undo history) ---
 
   private captureCleanDataUrl(): string {
+    if (this.elements.captureStageDataUrl) {
+      return this.elements.captureStageDataUrl();
+    }
     this.elements.setHandlesVisible?.(false);
     const canvas = this.canvasSource();
     this.elements.renderNow?.();

@@ -180,6 +180,43 @@ export class PuppetRenderer {
     return this.app.canvas as HTMLCanvasElement;
   }
 
+  /**
+   * Captures a guaranteed clean 2D snapshot of the whole stage without edit handles.
+   * Generates into a dedicated RenderTexture frame so the on-screen stage matrix
+   * is never mutated, and extracts to a 2D canvas that never suffers from WebGL
+   * buffer clearing.
+   */
+  public captureStageDataUrl(): string {
+    this.setEditHandlesVisible(false);
+    let dataUrl = '';
+    try {
+      if (this.app.renderer.textureGenerator && this.app.renderer.texture) {
+        const texture = this.app.renderer.textureGenerator.generateTexture({
+          target: this.app.stage,
+          frame: new Rectangle(0, 0, this.width, this.height),
+          resolution: 1,
+          clearColor: this.currentBgColorHex,
+        });
+        const canvas = this.app.renderer.texture.generateCanvas(texture) as HTMLCanvasElement;
+        dataUrl = canvas.toDataURL('image/png');
+        texture.destroy(true);
+      }
+    } catch (err) {
+      console.warn('generateTexture capture fallback:', err);
+    }
+    if (!dataUrl) {
+      try {
+        this.app.renderer.render(this.app.stage);
+        const c = this.app.canvas as HTMLCanvasElement;
+        dataUrl = c.toDataURL('image/png');
+      } catch (e2) {
+        console.error('Final fallback capture failed:', e2);
+      }
+    }
+    this.setEditHandlesVisible(true);
+    return dataUrl;
+  }
+
   /** Forces a single present of the current scene (used before toDataURL). */
   public renderNow(): void {
     this.app.renderer.render(this.app.stage);

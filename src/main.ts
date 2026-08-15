@@ -121,6 +121,7 @@ class AppManager {
           setTimeout(() => this.hideStatus(), 3000);
         },
         onAfterSnap: () => this.advanceStripAfterSnap(),
+        captureStageDataUrl: () => this.renderer.captureStageDataUrl(),
         setHandlesVisible: (visible: boolean) => this.renderer.setEditHandlesVisible(visible),
         renderNow: () => this.renderer.renderNow(),
         stripPrev: document.getElementById('sm-strip-prev') as HTMLButtonElement,
