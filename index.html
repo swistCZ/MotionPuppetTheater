@@ -91,7 +91,7 @@
 
         <!-- Stop-Motion onboarding hint (visible until the first frame) -->
         <div id="sm-empty-hint" class="sm-empty-hint hidden">
-          <p>Figurka sleduje dlaň ruky, prsty ovládají paže, nohy a hlavu. Figurku můžeš i táhnout myší (pohyblivé části).</p>
+          <p>Figurky sledují ruce (dlaň = pohyb, prsty = paže, nohy, hlava). Pro přesné ruční umístění vypni <strong>Ruka</strong> a figurky táhni myší – zůstanou, kam je dáš.</p>
           <p>Pěst zamkne pózu, vztyčený prostředníček scénu přiblíží.</p>
           <p class="sm-empty-hint-strong">Zmáčkni Snímek (nebo mezerník) pro uložení prvního snímku.</p>
         </div>
@@ -118,6 +118,7 @@
               <option value="12">12</option>
               <option value="24" selected>24</option>
             </select>
+            <button id="sm-btn-hand" class="btn btn-secondary btn-primary" title="Ruce sledují a ovládají loutky. Vypni pro přesné ruční umístění – loutky pak táhneš myší a ony zůstanou, kam je dáš.">Ruka (ZAP)</button>
             <button id="sm-btn-onion" class="btn btn-secondary" title="Zapnout/vypnout průsvitný duch předchozího snímku">Onion</button>
             <label class="compact-label" for="sm-onion-ghosts">Duchů</label>
             <select id="sm-onion-ghosts" class="select-input">

@@ -91,6 +91,10 @@ export class PuppetRenderer {
   // Motion Freeze
   private isFrozen: boolean = false;
 
+  // Hand-follow: when disabled the puppets stop tracking the hands and stay
+  // exactly where they are (stop-motion "manual placement" mode).
+  private handFollowEnabled: boolean = true;
+
   // Chain prop (e.g. a garland of leaves) following the tracked hand.
   private chainProp!: ChainProp;
 
@@ -224,6 +228,20 @@ export class PuppetRenderer {
    */
   public setFrozen(frozen: boolean): void {
     this.isFrozen = frozen;
+  }
+
+  /**
+   * Toggles whether the hands drive the puppets. Turning it off freezes the
+   * puppets in place so they can be arranged manually (drag) and snapped with
+   * full control over the final composition - this is the stop-motion
+   * "manual placement" mode.
+   */
+  public setHandFollowEnabled(enabled: boolean): void {
+    this.handFollowEnabled = enabled;
+  }
+
+  public isHandFollowEnabled(): boolean {
+    return this.handFollowEnabled;
   }
 
   /** Shows/hides the chain prop (garland of leaves) attached to the hand. */
@@ -573,7 +591,7 @@ export class PuppetRenderer {
 
     if (!puppet.container) return;
 
-    if (this.isFrozen) return;
+    if (this.isFrozen || !this.handFollowEnabled) return;
 
     if (isLeft) this.lastLeftState = state;
     else this.lastRightState = state;

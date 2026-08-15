@@ -586,6 +586,21 @@ class AppManager {
       setTimeout(() => this.hideStatus(), 2000);
     });
 
+    // Toggle hand-following (manual placement mode for precise arrangement).
+    const smBtnHand = document.getElementById('sm-btn-hand') as HTMLButtonElement;
+    smBtnHand.addEventListener('click', () => {
+      const active = !this.renderer.isHandFollowEnabled();
+      this.renderer.setHandFollowEnabled(active);
+      smBtnHand.textContent = active ? 'Ruka (ZAP)' : 'Ruka';
+      smBtnHand.classList.toggle('btn-primary', active);
+      this.showStatus(
+        active
+          ? 'Ruce opět ovládají loutky.'
+          : 'Sledování ruky vypnuto — loutky táhni myší, zůstanou na místě.'
+      );
+      setTimeout(() => this.hideStatus(), 2500);
+    });
+
     // Help / manual modal (open via button, backdrop or Esc).
     const helpModal = document.getElementById('help-modal') as HTMLElement;
     const btnHelp = document.getElementById('btn-help') as HTMLButtonElement;
