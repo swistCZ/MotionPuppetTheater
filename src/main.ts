@@ -48,7 +48,8 @@ class AppManager {
   private isMotionFrozen: boolean = false;
   private stopMotionActive: boolean = false;
   private fistFreezeActive: boolean = false;
-  private smStripOffset: number = 0;
+  private smStripOffsetX: number = 0;
+  private smStripOffsetY: number = 0;
   private smStripActive: boolean = false;
   private smEmptyHint: HTMLElement;
   private lastDiagTime: number = 0;
@@ -120,6 +121,9 @@ class AppManager {
         onAfterSnap: () => this.advanceStripAfterSnap(),
         setHandlesVisible: (visible: boolean) => this.renderer.setEditHandlesVisible(visible),
         renderNow: () => this.renderer.renderNow(),
+        stripPrev: document.getElementById('sm-strip-prev') as HTMLButtonElement,
+        stripNext: document.getElementById('sm-strip-next') as HTMLButtonElement,
+        stripMeta: document.getElementById('sm-strip-meta') as HTMLElement,
       }
     );
 
@@ -527,13 +531,23 @@ class AppManager {
     const smUploadStrip = document.getElementById('sm-upload-strip') as HTMLInputElement;
     const smUploadStripNear = document.getElementById('sm-upload-strip-near') as HTMLInputElement;
     const smParallax = document.getElementById('sm-parallax') as HTMLInputElement;
-    const smPanSlider = document.getElementById('sm-pan') as HTMLInputElement;
+    const smPanX = document.getElementById('sm-pan-x') as HTMLInputElement;
+    const smPanY = document.getElementById('sm-pan-y') as HTMLInputElement;
+    const smPanStepX = document.getElementById('sm-pan-step-x') as HTMLInputElement;
+    const smPanStepY = document.getElementById('sm-pan-step-y') as HTMLInputElement;
+
+    const applyStripPan = (): void => {
+      this.renderer.setStripOffset(this.smStripOffsetX, this.smStripOffsetY);
+    };
 
     const resetStripState = (): void => {
       this.smStripActive = false;
-      this.smStripOffset = 0;
-      smPanSlider.value = '0';
-      smPanSlider.disabled = true;
+      this.smStripOffsetX = 0;
+      this.smStripOffsetY = 0;
+      smPanX.value = '0';
+      smPanY.value = '0';
+      smPanX.disabled = true;
+      smPanY.disabled = true;
     };
 
     smBtnGreen.addEventListener('click', () => {
@@ -563,12 +577,15 @@ class AppManager {
       reader.onload = async (evt) => {
         const dataUrl = evt.target?.result as string;
         if (!dataUrl) return;
-        this.smStripOffset = 0;
+        this.smStripOffsetX = 0;
+        this.smStripOffsetY = 0;
         this.smStripActive = true;
-        smPanSlider.value = '0';
-        smPanSlider.disabled = false;
+        smPanX.value = '0';
+        smPanY.value = '0';
+        smPanX.disabled = false;
+        smPanY.disabled = false;
         await this.renderer.setStripBackground(dataUrl);
-        this.showStatus('Vzdálený pruh načten — posouvej posuvníkem nebo krokem na snímek.');
+        this.showStatus('Pozadí načteno — posouvej X/Y posuvníky (i svisle u velkého obrázku).');
         setTimeout(() => this.hideStatus(), 3000);
       };
       reader.readAsDataURL(file);
@@ -583,7 +600,8 @@ class AppManager {
         const dataUrl = evt.target?.result as string;
         if (!dataUrl) return;
         this.smStripActive = true;
-        smPanSlider.disabled = false;
+        smPanX.disabled = false;
+        smPanY.disabled = false;
         await this.renderer.setForegroundStripBackground(dataUrl);
         this.showStatus('Blízký pruh načten — posouvá se rychleji (paralaxa).');
         setTimeout(() => this.hideStatus(), 3000);
@@ -597,18 +615,26 @@ class AppManager {
       this.renderer.setParallaxFactor(factor);
     });
 
-    smPanSlider.addEventListener('input', () => {
-      this.smStripOffset = parseInt(smPanSlider.value, 10) || 0;
-      this.renderer.setStripOffset(this.smStripOffset);
+    smPanX.addEventListener('input', () => {
+      this.smStripOffsetX = parseInt(smPanX.value, 10) || 0;
+      applyStripPan();
+    });
+    smPanY.addEventListener('input', () => {
+      this.smStripOffsetY = parseInt(smPanY.value, 10) || 0;
+      applyStripPan();
     });
 
-    // Auto-advance the strip by the configured step after every captured frame.
+    // Auto-advance the strip by the configured X/Y step after every captured frame.
     this.advanceStripAfterSnap = (): void => {
-      const step = parseFloat((document.getElementById('sm-pan-step') as HTMLInputElement).value) || 0;
-      if (!this.smStripActive || step <= 0) return;
-      this.smStripOffset += step;
-      smPanSlider.value = String(this.smStripOffset);
-      this.renderer.setStripOffset(this.smStripOffset);
+      if (!this.smStripActive) return;
+      const stepX = parseFloat(smPanStepX.value) || 0;
+      const stepY = parseFloat(smPanStepY.value) || 0;
+      if (stepX === 0 && stepY === 0) return;
+      this.smStripOffsetX += stepX;
+      this.smStripOffsetY += stepY;
+      smPanX.value = String(this.smStripOffsetX);
+      smPanY.value = String(this.smStripOffsetY);
+      applyStripPan();
     };
 
     // Toggle the chain prop (garland of leaves) that follows the hand.

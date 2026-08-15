@@ -88,7 +88,8 @@ export class PuppetRenderer {
   private bgSprite: Sprite | null = null;
   private bgTiling: TilingSprite | null = null;
   private bgTilingNear: TilingSprite | null = null;
-  private stripOffset: number = 0;
+  private stripOffsetX: number = 0;
+  private stripOffsetY: number = 0;
   private stripParallaxFactor: number = 1.6;
   private currentBgColorHex: number = 0x2d3748;
 
@@ -113,6 +114,8 @@ export class PuppetRenderer {
   private dragInfo: Map<Container, PartDragInfo> = new Map();
   private activeDrag: ActiveDrag | null = null;
   private handlesVisible: boolean = true;
+  /** Handle currently under the pointer (wheel rotates limbs finely). */
+  private hoveredHandle: PartDragInfo | null = null;
 
   private width: number;
   private height: number;
@@ -374,12 +377,16 @@ export class PuppetRenderer {
       // Window listeners keep the drag alive even if the pointer leaves the canvas.
       window.addEventListener('pointermove', this.onWindowPointerMove);
       window.addEventListener('pointerup', this.onWindowPointerUp);
+      // Wheel over a handle = fine limb rotation (DOM wheel is more reliable than Pixi).
+      (this.app.canvas as HTMLCanvasElement).addEventListener('wheel', this.onCanvasWheel, { passive: false });
     } else {
       this.app.stage.off('pointermove', this.onStagePointerMove);
       this.app.stage.off('pointerup', this.onStagePointerUp);
       this.app.stage.off('pointerupoutside', this.onStagePointerUp);
       window.removeEventListener('pointermove', this.onWindowPointerMove);
       window.removeEventListener('pointerup', this.onWindowPointerUp);
+      (this.app.canvas as HTMLCanvasElement).removeEventListener('wheel', this.onCanvasWheel);
+      this.hoveredHandle = null;
     }
   }
 
@@ -415,6 +422,8 @@ export class PuppetRenderer {
       const g = this.makeHandle(part === 'body' ? 0x58a6ff : 0x7ee787);
       this.dragInfo.set(g, { puppet, part });
       g.on('pointerdown', this.onHandlePointerDown);
+      g.on('pointerover', this.onHandlePointerOver);
+      g.on('pointerout', this.onHandlePointerOut);
       handles.addChild(g);
       byPart[part] = g;
     }
@@ -524,6 +533,95 @@ export class PuppetRenderer {
     };
     if (target instanceof Graphics) target.cursor = 'grabbing';
   };
+
+  private onHandlePointerOver = (e: FederatedPointerEvent): void => {
+    const target = e.currentTarget as Container;
+    const info = this.dragInfo.get(target);
+    if (info) this.hoveredHandle = info;
+  };
+
+  private onHandlePointerOut = (e: FederatedPointerEvent): void => {
+    const target = e.currentTarget as Container;
+    const info = this.dragInfo.get(target);
+    if (info && this.hoveredHandle === info) this.hoveredHandle = null;
+  };
+
+  /**
+   * Fine limb rotation via the mouse wheel while hovering a green handle.
+   * Body handle is ignored (move is drag-only). Step is small (~2.3°) for
+   * precise stop-motion posing.
+   */
+  private onCanvasWheel = (e: WheelEvent): void => {
+    if (!this.poseEditing || !this.hoveredHandle) return;
+    const { puppet, part } = this.hoveredHandle;
+    if (part === 'body') return;
+    e.preventDefault();
+
+    // Normalize delta across mice/trackpads; negative = rotate clockwise-ish.
+    const steps = Math.sign(e.deltaY) || (e.deltaX ? Math.sign(e.deltaX) : 0);
+    if (steps === 0) return;
+    const delta = steps * 0.04;
+
+    if (puppet.rig) {
+      const { parts, config } = puppet.rig;
+      if (part === 'head' && parts.headContainer) {
+        parts.headContainer.position.y += steps * 2;
+        if (puppet.handleByPart?.head) puppet.handleByPart.head.position.copyFrom(parts.headContainer.position);
+        return;
+      }
+      const sprite =
+        part === 'leftArm'
+          ? parts.leftArmSprite
+          : part === 'rightArm'
+            ? parts.rightArmSprite
+            : part === 'leftLeg'
+              ? parts.leftLegSprite
+              : parts.rightLegSprite;
+      if (!sprite) return;
+      const rest =
+        part === 'leftArm'
+          ? config.leftArm.restHandAngle
+          : part === 'rightArm'
+            ? config.rightArm.restHandAngle
+            : part === 'leftLeg'
+              ? (config.leftLeg?.restAngle ?? 0) + Math.PI / 2
+              : (config.rightLeg?.restAngle ?? 0) + Math.PI / 2;
+      const next = sprite.rotation + delta;
+      const lo = rest - puppet.rig.maxArmDelta;
+      const hi = rest + puppet.rig.maxArmDelta;
+      sprite.rotation = Math.max(lo, Math.min(hi, next));
+      return;
+    }
+
+    // Procedural: rotate the limb endpoint around the joint origin.
+    if (part === 'head') {
+      puppet.headContainer.position.y += steps * 2;
+      if (!puppet.manualPose) puppet.manualPose = {};
+      puppet.manualPose.head = { x: puppet.headContainer.position.x, y: puppet.headContainer.position.y };
+      if (puppet.handleByPart?.head) puppet.handleByPart.head.position.copyFrom(puppet.headContainer.position);
+      return;
+    }
+    if (part !== 'leftArm' && part !== 'rightArm' && part !== 'leftLeg' && part !== 'rightLeg') return;
+    if (!puppet.manualPose) puppet.manualPose = {};
+    const cur = puppet.manualPose[part] ?? this.defaultLimbEnd(part);
+    const ox = part.endsWith('Arm') ? (part === 'leftArm' ? -25 : 25) : part === 'leftLeg' ? -20 : 20;
+    const oy = part.endsWith('Arm') ? -10 : 30;
+    const dx = cur.x - ox;
+    const dy = cur.y - oy;
+    const len = Math.hypot(dx, dy) || 1;
+    const ang = Math.atan2(dy, dx) + delta;
+    puppet.manualPose[part] = { x: ox + Math.cos(ang) * len, y: oy + Math.sin(ang) * len };
+    this.renderProceduralPuppet(puppet);
+    const h = puppet.handleByPart?.[part];
+    if (h) h.position.set(puppet.manualPose[part]!.x, puppet.manualPose[part]!.y);
+  };
+
+  private defaultLimbEnd(part: 'leftArm' | 'rightArm' | 'leftLeg' | 'rightLeg'): Point2D {
+    if (part === 'leftArm') return { x: -60, y: 10 };
+    if (part === 'rightArm') return { x: 60, y: 10 };
+    if (part === 'leftLeg') return { x: -22, y: 62 };
+    return { x: 22, y: 62 };
+  }
 
   private globalFromEvent(e: FederatedPointerEvent | PointerEvent): Point2D {
     if ('global' in e && e.global) return { x: e.global.x, y: e.global.y };
@@ -799,17 +897,19 @@ export class PuppetRenderer {
       this.bgTiling.visible = true;
       this.bgGraphics.clear();
       if (this.bgSprite) this.bgSprite.visible = false;
-      this.stripOffset = 0;
+      this.stripOffsetX = 0;
+      this.stripOffsetY = 0;
       this.updateStripOffsets();
     } catch (err) {
       console.error('Failed to load strip background image:', err);
     }
   }
 
-  /** Pans the visible window(s) of the strip backgrounds. The near layer pans
-   * faster than the far layer by the configured parallax factor for depth. */
-  public setStripOffset(offsetX: number): void {
-    this.stripOffset = offsetX;
+  /** Pans the visible window of the strip backgrounds in 2D (X and Y). The near
+   * layer pans faster than the far layer by the parallax factor for depth. */
+  public setStripOffset(offsetX: number, offsetY: number = this.stripOffsetY): void {
+    this.stripOffsetX = offsetX;
+    this.stripOffsetY = offsetY;
     this.updateStripOffsets();
   }
 
@@ -824,10 +924,12 @@ export class PuppetRenderer {
 
   private updateStripOffsets(): void {
     if (this.bgTiling && this.bgTiling.visible) {
-      this.bgTiling.tilePosition.x = -this.stripOffset;
+      this.bgTiling.tilePosition.x = -this.stripOffsetX;
+      this.bgTiling.tilePosition.y = -this.stripOffsetY;
     }
     if (this.bgTilingNear && this.bgTilingNear.visible) {
-      this.bgTilingNear.tilePosition.x = -this.stripOffset * this.stripParallaxFactor;
+      this.bgTilingNear.tilePosition.x = -this.stripOffsetX * this.stripParallaxFactor;
+      this.bgTilingNear.tilePosition.y = -this.stripOffsetY * this.stripParallaxFactor;
     }
   }
 

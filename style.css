@@ -335,13 +335,70 @@ body {
   margin: 0 4px;
 }
 
+.sm-strip-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 64px;
+}
+
+.sm-strip-nav {
+  flex-shrink: 0;
+  padding: 6px 10px;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.sm-strip-meta {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  opacity: 0.8;
+  min-width: 4.5rem;
+  text-align: right;
+  white-space: nowrap;
+}
+
 .sm-frame-strip {
   display: flex;
   align-items: center;
   gap: 6px;
   overflow-x: auto;
-  padding: 4px 2px;
+  overflow-y: hidden;
+  padding: 4px 2px 8px;
   min-height: 64px;
+  flex: 1;
+  min-width: 0;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(88, 166, 255, 0.55) rgba(255, 255, 255, 0.06);
+}
+
+.sm-frame-strip::-webkit-scrollbar {
+  height: 6px;
+}
+
+.sm-frame-strip::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+}
+
+.sm-frame-strip::-webkit-scrollbar-thumb {
+  background: rgba(88, 166, 255, 0.45);
+  border-radius: 4px;
+}
+
+.sm-frame-strip::-webkit-scrollbar-thumb:hover {
+  background: rgba(88, 166, 255, 0.7);
+}
+
+.sm-frame-gap {
+  flex-shrink: 0;
+  align-self: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+  opacity: 0.55;
+  padding: 0 4px;
+  user-select: none;
 }
 
 .sm-frame-thumb {
@@ -355,6 +412,12 @@ body {
   cursor: pointer;
   background: rgba(0, 0, 0, 0.4);
   padding: 0;
+}
+
+/* Dense mode when many frames are on the strip (windowed view still uses full thumbs). */
+.sm-frame-strip.dense .sm-frame-thumb {
+  width: 48px;
+  height: 36px;
 }
 
 .sm-frame-thumb img {
@@ -384,7 +447,7 @@ body {
 }
 
 .sm-pan-slider {
-  width: 140px;
+  width: 110px;
   accent-color: var(--accent-blue);
 }
 

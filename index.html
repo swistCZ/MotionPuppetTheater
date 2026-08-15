@@ -113,12 +113,12 @@
             <button id="sm-btn-duplicate" class="btn btn-secondary" title="Duplikovat vybraný snímek" disabled>Duplikovat</button>
             <button id="sm-btn-left" class="btn btn-secondary" title="Posunout snímek doleva" disabled>&larr;</button>
             <button id="sm-btn-right" class="btn btn-secondary" title="Posunout snímek doprava" disabled>&rarr;</button>
-            <button id="sm-btn-undo" class="btn btn-secondary" title="Zpět – vrátit poslední úpravu časové osy" disabled>Zpět</button>
-            <button id="sm-btn-redo" class="btn btn-secondary" title="Znovu – opakovat vrácenou úpravu" disabled>Znovu</button>
-            <button id="sm-btn-clear" class="btn btn-secondary" title="Smazat všechny snímky" disabled>Vše</button>
+            <button id="sm-btn-undo" class="btn btn-secondary" title="Vrátit poslední úpravu časové osy (Ctrl+Z)" disabled>Zpět</button>
+            <button id="sm-btn-redo" class="btn btn-secondary" title="Obnovit vrácenou úpravu (Ctrl+Y)" disabled>Vpřed</button>
+            <button id="sm-btn-clear" class="btn btn-secondary" title="Smazat VŠECHNY snímky z časové osy" disabled>Smazat vše</button>
             <button id="sm-btn-play" class="btn btn-secondary" title="Přehrát snímky" disabled>Přehrát</button>
-            <button id="sm-btn-loop" class="btn btn-secondary btn-primary" title="Opakovat přehrávání ve smyčce">Opakovat</button>
-            <button id="sm-btn-reverse" class="btn btn-secondary" title="Přehrávat od konce do začátku">Zpětně</button>
+            <button id="sm-btn-loop" class="btn btn-secondary btn-primary" title="Přehrávat ve smyčce">Smyčka</button>
+            <button id="sm-btn-reverse" class="btn btn-secondary" title="Přehrávat od posledního snímku k prvnímu">Od konce</button>
             <label class="compact-label" for="sm-fps">FPS</label>
             <select id="sm-fps" class="select-input">
               <option value="12">12</option>
@@ -153,15 +153,25 @@
               <input type="file" id="sm-upload-strip-near" accept="image/*" />
             </label>
             <button id="sm-btn-reset-bg" class="btn btn-secondary" title="Vrátit výchozí pozadí">Výchozí</button>
-            <input type="range" id="sm-pan" class="sm-pan-slider" min="0" max="4000" value="0" title="Ruční posun okna pruhu" disabled />
-            <label class="compact-label" for="sm-pan-step">Krok:</label>
-            <input type="number" id="sm-pan-step" class="sm-pan-step" value="0" min="0" step="1" title="Auto-posuv okna pruhu v px po každém uloženém snímku" />
+            <label class="compact-label" for="sm-pan-x">X:</label>
+            <input type="range" id="sm-pan-x" class="sm-pan-slider" min="0" max="4000" value="0" title="Vodorovný posun okna pruhu (X)" disabled />
+            <label class="compact-label" for="sm-pan-y">Y:</label>
+            <input type="range" id="sm-pan-y" class="sm-pan-slider" min="0" max="4000" value="0" title="Svislý posun okna pruhu (Y) – pro velké pozadí 3×3 a podobně" disabled />
+            <label class="compact-label" for="sm-pan-step-x">Krok X:</label>
+            <input type="number" id="sm-pan-step-x" class="sm-pan-step" value="0" min="0" step="1" title="Auto-posuv X v px po každém snímku" />
+            <label class="compact-label" for="sm-pan-step-y">Krok Y:</label>
+            <input type="number" id="sm-pan-step-y" class="sm-pan-step" value="0" min="0" step="1" title="Auto-posuv Y v px po každém snímku" />
             <label class="compact-label" for="sm-parallax">Paralaxa:</label>
-            <input type="number" id="sm-parallax" class="sm-pan-step" value="1.6" min="1" step="0.1" title="Kolikrát rychleji se posouvá blízký pruh (Pruh 2) oproti vzdálenému" />
+            <input type="number" id="sm-parallax" class="sm-pan-step" value="1.6" min="1" step="0.1" title="Kolikrát rychleji se posouvá blízký pruh (Pruh 2)" />
             <span class="sm-separator"></span>
             <button id="sm-btn-leaves" class="btn btn-secondary" title="Zapnout/vypnout řetěz listí sledující ruku (prop)">Listí</button>
           </div>
-          <div id="sm-frame-strip" class="sm-frame-strip"></div>
+          <div class="sm-strip-bar">
+            <button type="button" id="sm-strip-prev" class="btn btn-secondary sm-strip-nav" title="Předchozí snímky" disabled>&lsaquo;</button>
+            <div id="sm-frame-strip" class="sm-frame-strip"></div>
+            <button type="button" id="sm-strip-next" class="btn btn-secondary sm-strip-nav" title="Další snímky" disabled>&rsaquo;</button>
+            <span id="sm-strip-meta" class="sm-strip-meta"></span>
+          </div>
         </section>
       </main>
     </div>
@@ -228,8 +238,8 @@
             <ul class="help-list">
               <li><strong>Snímek</strong> – uloží aktuální scénu jako PNG.</li>
               <li><strong>Smazat / Duplikovat</strong> – smaže / zkopíruje vybraný snímek; <strong>&larr; &rarr;</strong> jej přeřadí.</li>
-              <li><strong>Zpět / Znovu</strong> – vrací a opakuje úpravy časové osy; <strong>Vše</strong> smaže celou osu.</li>
-              <li><strong>Přehrát</strong> – přehraje snímky; <strong>Opakovat</strong> smyčku; <strong>Zpětně</strong> přehrávání od konce.</li>
+              <li><strong>Zpět / Vpřed</strong> – vrací a obnovuje úpravy časové osy; <strong>Smazat vše</strong> smaže celou osu (s potvrzením).</li>
+              <li><strong>Přehrát</strong> – přehraje snímky; <strong>Smyčka</strong> opakuje; <strong>Od konce</strong> přehrává od posledního snímku k prvnímu.</li>
               <li><strong>FPS</strong> – rychlost přehrávání (12 nebo 24).</li>
               <li><strong>Onion</strong> – průsvitný duch vybraného snímku pod živou scénou; <strong>Duchů</strong> určuje počet duchů (1–3).</li>
               <li><strong>Mřížka</strong> – registrační mřížka pro zarovnání snímků na sebe.</li>
@@ -242,7 +252,8 @@
             <ul class="help-list">
               <li><strong>Zelená</strong> – vyplní scénu klíčovací zelenou (chroma key) pro kompozici do jiné scény.</li>
               <li><strong>Barva</strong> – zvolí vlastní barvu pozadí.</li>
-              <li><strong>Pruh</strong> – nahraje vzdálený pás pozadí; posouvá se posuvníkem nebo automaticky (<strong>Krok</strong> px na každý snímek).</li>
+              <li><strong>Pruh</strong> – nahraje velké pozadí; posouvá se posuvníky <strong>X</strong> a <strong>Y</strong> (i svisle u 3×3 scény), nebo automaticky o <strong>Krok X/Y</strong> po každém snímku.</li>
+              <li>Na zelených kroužcích loutky: <strong>kolečko myši</strong> = jemné otočení končetiny / posun hlavy.</li>
               <li><strong>Pruh 2</strong> – nahraje blízký pás, který se posouvá rychleji; <strong>Paralaxa</strong> určuje poměr (default 1,6×) – iluze hloubky.</li>
               <li><strong>Výchozí</strong> – vrátí základní pozadí.</li>
               <li><strong>Listí</strong> – zapne řetěz listí (prop), který sleduje ruku.</li>

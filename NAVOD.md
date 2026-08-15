@@ -73,9 +73,9 @@ Zapni **Stop-motion** — dole se objeví časová osa. Figurky se okamžitě zo
 - **Snímek** — uloží aktuální scénu jako PNG.
 - **Smazat / Duplikovat** — smaže / zkopíruje vybraný snímek.
 - **← →** — přeřadí vybraný snímek doleva/doprava.
-- **Zpět / Znovu** — vrací a opakuje úpravy časové osy (až 50 kroků).
-- **Vše** — smaže celou časovou osu.
-- **Přehrát** — přehraje snímky; **Opakovat** zapne/vypne smyčku; **Zpětně** přehrává od konce do začátku.
+- **Zpět / Vpřed** — vrací a obnovuje úpravy časové osy (až 50 kroků).
+- **Smazat vše** — smaže celou časovou osu (s potvrzením; lze vrátit Zpět).
+- **Přehrát** — přehraje snímky; **Smyčka** zapne/vypne opakování; **Od konce** přehrává od posledního snímku k prvnímu.
 - **FPS** — rychlost přehrávání (12 nebo 24).
 - **Onion** — průsvitný duch vybraného snímku pod živou scénou (pomáhá navazovat pózy).
 - **Duchů** — počet onion duchů (1–3); nejnovější duch je nejvýraznější.
@@ -86,7 +86,9 @@ Zapni **Stop-motion** — dole se objeví časová osa. Figurky se okamžitě zo
 
 - **Zelená** — vyplní scénu klíčovací zelenou (`#00B140`) pro chroma key kompozici do jiné scény/videa.
 - **Barva** — výběr vlastní barvy pozadí.
-- **Pruh** — nahraje **vzdálený** pás pozadí (TilingSprite). Okno pásu posouvá **posuvník**, nebo se auto-posouvá o **Krok** px po každém uloženém snímku.
+- **Pruh** — nahraje velké pozadí (TilingSprite). Okno posouváš posuvníky **X** a **Y** (i svisle u 3×3 scény), nebo auto-posunem **Krok X/Y** po každém snímku.
+- **Kolečko myši** nad zeleným kroužkem končetiny = jemné otočení; nad hlavou = jemný posun nahoru/dolů.
+- Časová osa ukazuje najednou max. ~24 náhledů; u delších filmů šipky ‹ › a počítadlo `n/total`.
 - **Pruh 2** — nahraje **blízký** pás, který se posouvá rychleji — vzniká iluze hloubky (paralaxa).
 - **Paralaxa** — poměr rychlosti blízkého pásu vůči vzdálenému (default 1,6×; rozsah 1–5).
 - **Výchozí** — vrátí základní pozadí.

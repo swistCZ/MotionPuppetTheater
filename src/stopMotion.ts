@@ -38,7 +38,15 @@ export interface StopMotionElements {
   setHandlesVisible?: (visible: boolean) => void;
   /** Force a Pixi present so toDataURL sees the latest frame. */
   renderNow?: () => void;
+  /** Optional windowed-strip chrome (prev/next + "n / total"). */
+  stripPrev?: HTMLButtonElement;
+  stripNext?: HTMLButtonElement;
+  stripMeta?: HTMLElement;
 }
+
+/** Max full-size thumbs rendered at once; beyond this the strip is windowed. */
+const STRIP_WINDOW = 24;
+const STRIP_DENSE_AT = 40;
 
 const ONION_ALPHA = 0.4;
 const GRID_STEP = 96;
@@ -120,6 +128,8 @@ export class StopMotionController {
       this.ghostCount = parseInt(this.elements.ghostSelect.value, 10) || 1;
       this.updateOnion();
     });
+    this.elements.stripPrev?.addEventListener('click', () => this.nudgeStripWindow(-STRIP_WINDOW));
+    this.elements.stripNext?.addEventListener('click', () => this.nudgeStripWindow(STRIP_WINDOW));
 
     // Space bar captures a frame (capture phase so focused buttons don't
     // double-trigger and the page never scrolls).
@@ -229,6 +239,10 @@ export class StopMotionController {
 
   public clearAll(): void {
     if (this.frames.length === 0) return;
+    const ok = window.confirm(
+      `Opravdu smazat VŠECHNY snímky (${this.frames.length})? Tuto akci lze vrátit tlačítkem Zpět.`
+    );
+    if (!ok) return;
     this.recordHistory();
     this.frames = [];
     this.selectedIndex = null;
@@ -475,22 +489,77 @@ export class StopMotionController {
     this.elements.btnPlay.textContent = 'Přehrát';
   }
 
-  // --- Frame strip ---
+  // --- Frame strip (windowed for large timelines) ---
+
+  private stripWindowStart = 0;
+
+  private nudgeStripWindow(delta: number): void {
+    const total = this.frames.length;
+    if (total <= STRIP_WINDOW) {
+      this.stripWindowStart = 0;
+      this.renderStrip();
+      return;
+    }
+    const maxStart = Math.max(0, total - STRIP_WINDOW);
+    this.stripWindowStart = Math.max(0, Math.min(maxStart, this.stripWindowStart + delta));
+    this.renderStrip();
+  }
+
+  /** Keeps the selected frame inside the visible window when possible. */
+  private ensureSelectionInWindow(): void {
+    const total = this.frames.length;
+    if (total <= STRIP_WINDOW) {
+      this.stripWindowStart = 0;
+      return;
+    }
+    const maxStart = Math.max(0, total - STRIP_WINDOW);
+    const sel = this.selectedIndex ?? total - 1;
+    if (sel < this.stripWindowStart) this.stripWindowStart = sel;
+    else if (sel >= this.stripWindowStart + STRIP_WINDOW) {
+      this.stripWindowStart = Math.min(maxStart, sel - STRIP_WINDOW + 1);
+    }
+    this.stripWindowStart = Math.max(0, Math.min(maxStart, this.stripWindowStart));
+  }
 
   private renderStrip(): void {
     const strip = this.elements.strip;
     strip.textContent = '';
+    const total = this.frames.length;
+    this.ensureSelectionInWindow();
 
-    this.frames.forEach((frame, index) => {
+    strip.classList.toggle('dense', total >= STRIP_DENSE_AT);
+
+    if (total === 0) {
+      if (this.elements.stripMeta) this.elements.stripMeta.textContent = '';
+      if (this.elements.stripPrev) this.elements.stripPrev.disabled = true;
+      if (this.elements.stripNext) this.elements.stripNext.disabled = true;
+      return;
+    }
+
+    const windowed = total > STRIP_WINDOW;
+    const start = windowed ? this.stripWindowStart : 0;
+    const end = windowed ? Math.min(total, start + STRIP_WINDOW) : total;
+
+    if (windowed && start > 0) {
+      const gap = document.createElement('span');
+      gap.className = 'sm-frame-gap';
+      gap.textContent = `…1–${start}`;
+      gap.title = 'Starší snímky — použij šipku vlevo';
+      strip.appendChild(gap);
+    }
+
+    for (let index = start; index < end; index++) {
+      const frame = this.frames[index];
       const thumb = document.createElement('button');
       thumb.type = 'button';
       thumb.className = 'sm-frame-thumb';
-      thumb.title = `Snímek ${index + 1}`;
+      thumb.title = `Snímek ${index + 1} / ${total}`;
       if (index === this.selectedIndex) thumb.classList.add('selected');
 
       const img = document.createElement('img');
       img.src = frame.dataUrl;
       img.alt = `Snímek ${index + 1}`;
+      img.loading = 'lazy';
 
       const label = document.createElement('span');
       label.className = 'sm-frame-index';
@@ -506,8 +575,27 @@ export class StopMotionController {
         this.updateButtons();
       });
       strip.appendChild(thumb);
-      thumb.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-    });
+    }
+
+    if (windowed && end < total) {
+      const gap = document.createElement('span');
+      gap.className = 'sm-frame-gap';
+      gap.textContent = `…${end + 1}–${total}`;
+      gap.title = 'Novější snímky — použij šipku vpravo';
+      strip.appendChild(gap);
+    }
+
+    const sel = (this.selectedIndex ?? 0) + 1;
+    if (this.elements.stripMeta) {
+      this.elements.stripMeta.textContent = windowed
+        ? `${sel}/${total} · ${start + 1}–${end}`
+        : `${sel} / ${total}`;
+    }
+    if (this.elements.stripPrev) this.elements.stripPrev.disabled = !windowed || start <= 0;
+    if (this.elements.stripNext) this.elements.stripNext.disabled = !windowed || end >= total;
+
+    const selectedEl = strip.querySelector('.sm-frame-thumb.selected') as HTMLElement | null;
+    selectedEl?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }
 
   // --- Export (WebM / GIF / PNG-ZIP) ---
