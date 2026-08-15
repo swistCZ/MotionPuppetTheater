@@ -181,26 +181,11 @@ export class PuppetRenderer {
   }
 
   /** Captures a clean PNG snapshot of the stage with edit handles temporarily hidden. */
-  public async captureStageDataUrl(): Promise<string> {
+  public captureStageDataUrl(): string {
     this.setEditHandlesVisible(false);
     this.app.renderer.render(this.app.stage);
-    let dataUrl = '';
-    try {
-      if (this.app.renderer.extract) {
-        dataUrl = await this.app.renderer.extract.base64(this.app.stage);
-      }
-    } catch (err) {
-      console.warn('Extract base64 fallback to canvas:', err);
-    }
-    if (!dataUrl) {
-      try {
-        const c = this.app.renderer.extract.canvas(this.app.stage) as HTMLCanvasElement;
-        dataUrl = c.toDataURL('image/png');
-      } catch {
-        const canvas = this.app.canvas as HTMLCanvasElement;
-        dataUrl = canvas.toDataURL('image/png');
-      }
-    }
+    const canvas = this.app.canvas as HTMLCanvasElement;
+    const dataUrl = canvas.toDataURL('image/png');
     this.setEditHandlesVisible(true);
     return dataUrl;
   }

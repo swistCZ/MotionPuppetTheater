@@ -54,7 +54,7 @@ export interface StopMotionElements {
   onAfterSnap?: () => void;
   audioSource?: () => MediaStreamAudioDestinationNode | undefined;
   /** Capture clean stage dataURL without handles. */
-  captureStageDataUrl?: () => Promise<string> | string;
+  captureStageDataUrl?: () => string;
   /** Hide/show stop-motion edit handles around a capture. */
   setHandlesVisible?: (visible: boolean) => void;
   /** Force a Pixi present so toDataURL sees the latest frame. */
@@ -120,9 +120,9 @@ export class StopMotionController {
     this.gridCtx = elements.gridCanvas.getContext('2d')!;
     this.ghostCount = parseInt(elements.ghostSelect.value, 10) || 1;
 
-    this.elements.btnSnap.addEventListener('click', () => void this.snapFrame());
+    this.elements.btnSnap.addEventListener('click', () => this.snapFrame());
     this.elements.btnLoadPose?.addEventListener('click', () => void this.loadPoseForSelected());
-    this.elements.btnUpdateFrame?.addEventListener('click', () => void this.updateSelectedFrame());
+    this.elements.btnUpdateFrame?.addEventListener('click', () => this.updateSelectedFrame());
     this.elements.btnDelete.addEventListener('click', () => this.deleteSelected());
     this.elements.btnDuplicate.addEventListener('click', () => this.duplicateSelected());
     this.elements.btnLeft.addEventListener('click', () => this.moveSelected(-1));
@@ -176,7 +176,7 @@ export class StopMotionController {
         e.preventDefault();
         e.stopPropagation();
         if (this.exporting || this.playing) return;
-        void this.snapFrame();
+        this.snapFrame();
       },
       true
     );
@@ -224,9 +224,9 @@ export class StopMotionController {
 
   // --- Timeline edits (all record undo history) ---
 
-  private async captureCleanDataUrl(): Promise<string> {
+  private captureCleanDataUrl(): string {
     if (this.elements.captureStageDataUrl) {
-      return await this.elements.captureStageDataUrl();
+      return this.elements.captureStageDataUrl();
     }
     this.elements.setHandlesVisible?.(false);
     const canvas = this.canvasSource();
@@ -236,10 +236,10 @@ export class StopMotionController {
     return dataUrl;
   }
 
-  public async snapFrame(): Promise<void> {
+  public snapFrame(): void {
     try {
       this.recordHistory();
-      const dataUrl = await this.captureCleanDataUrl();
+      const dataUrl = this.captureCleanDataUrl();
       const pose = this.elements.getPoseSnapshot?.();
       const id = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}`;
       this.frames.push({ id, dataUrl, pose });
@@ -267,10 +267,10 @@ export class StopMotionController {
   }
 
   /** Overwrites the selected frame with the live stage (new capture + new pose). */
-  public async updateSelectedFrame(): Promise<void> {
+  public updateSelectedFrame(): void {
     if (this.selectedIndex === null) return;
     this.recordHistory();
-    const dataUrl = await this.captureCleanDataUrl();
+    const dataUrl = this.captureCleanDataUrl();
     const pose = this.elements.getPoseSnapshot?.();
     const existing = this.frames[this.selectedIndex];
     this.frames[this.selectedIndex] = { id: existing.id, dataUrl, pose };
