@@ -1,3 +1,6 @@
+import { GIFEncoder, quantize, applyPalette } from 'gifenc';
+import { zipSync } from 'fflate';
+
 export interface StopMotionFrame {
   id: string;
   dataUrl: string;
@@ -15,7 +18,11 @@ export interface StopMotionElements {
   btnRight: HTMLButtonElement;
   btnPlay: HTMLButtonElement;
   btnOnion: HTMLButtonElement;
+  btnExportWebm: HTMLButtonElement;
+  btnExportGif: HTMLButtonElement;
+  btnExportZip: HTMLButtonElement;
   fpsSelect: HTMLSelectElement;
+  onStatus?: (message: string) => void;
 }
 
 const ONION_ALPHA = 0.4;
@@ -36,6 +43,7 @@ export class StopMotionController {
 
   private onionCtx: CanvasRenderingContext2D;
   private playCtx: CanvasRenderingContext2D;
+  private exporting: boolean = false;
 
   constructor(
     private canvasSource: () => HTMLCanvasElement,
@@ -54,6 +62,9 @@ export class StopMotionController {
       else void this.startPlayback();
     });
     this.elements.btnOnion.addEventListener('click', () => this.toggleOnion());
+    this.elements.btnExportWebm.addEventListener('click', () => void this.exportWebM());
+    this.elements.btnExportGif.addEventListener('click', () => void this.exportGif());
+    this.elements.btnExportZip.addEventListener('click', () => this.exportZip());
     this.elements.fpsSelect.addEventListener('change', () => {
       if (this.playing) this.restartPlayback();
     });
@@ -260,13 +271,227 @@ export class StopMotionController {
     });
   }
 
+  // --- Export (WebM / GIF / PNG-ZIP) ---
+
+  /**
+   * Records the frames as a WebM/MP4 video at the selected fps by drawing each
+   * frame to a canvas and pushing it into the MediaStream via requestFrame().
+   */
+  private async exportWebM(): Promise<void> {
+    if (this.exporting || this.frames.length === 0) return;
+    this.setExporting(true);
+    this.stopPlayback();
+    try {
+      const fps = parseInt(this.elements.fpsSelect.value, 10) || 24;
+      const canvas = this.elements.playCanvas;
+      const canvasStream = canvas as HTMLCanvasElement & { captureStream(fps?: number): MediaStream };
+      if (typeof canvasStream.captureStream !== 'function') {
+        this.elements.onStatus?.('Export WebM není v tomto prohlížeči podporován.');
+        return;
+      }
+
+      const stream = canvasStream.captureStream(0);
+      const track = stream.getVideoTracks()[0] as MediaStreamTrack & { requestFrame?: () => void };
+      const mimeType = this.getSupportedMimeType();
+      const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 5000000 });
+      const chunks: Blob[] = [];
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) chunks.push(e.data);
+      };
+      const stopped = new Promise<void>((resolve) => {
+        recorder.onstop = () => resolve();
+      });
+
+      this.elements.onStatus?.('Exportuji WebM...');
+      const images = await this.loadImages(this.frames);
+      // Show the playback overlay while recording so captureStream always
+      // captures a rendered canvas (some browsers emit black frames from
+      // display:none canvases).
+      this.elements.playCanvas.classList.add('active');
+      recorder.start();
+
+      const drawFrame = (img: HTMLImageElement): void => {
+        this.playCtx.clearRect(0, 0, canvas.width, canvas.height);
+        this.playCtx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        if (typeof track.requestFrame === 'function') track.requestFrame();
+      };
+
+      await new Promise<void>((resolve) => {
+        drawFrame(images[0]);
+        let i = 0;
+        const timer = window.setInterval(() => {
+          i += 1;
+          if (i >= images.length) {
+            clearInterval(timer);
+            resolve();
+            return;
+          }
+          drawFrame(images[i]);
+        }, 1000 / fps);
+      });
+
+      recorder.stop();
+      await stopped;
+      if (chunks.length > 0) {
+        const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
+        this.downloadBlob(new Blob(chunks, { type: mimeType }), `stop-motion-${this.dateStamp()}.${ext}`);
+        this.elements.onStatus?.('WebM export uložen.');
+      } else {
+        this.elements.onStatus?.('WebM export selhal (bez dat).');
+      }
+    } catch (err) {
+      console.error('WebM export failed:', err);
+      this.elements.onStatus?.('Chyba při exportu WebM.');
+    } finally {
+      this.elements.playCanvas.classList.remove('active');
+      this.playCtx.clearRect(0, 0, this.elements.playCanvas.width, this.elements.playCanvas.height);
+      this.setExporting(false);
+    }
+  }
+
+  /** Encodes the frames as an animated GIF at the selected fps (capped width). */
+  private async exportGif(): Promise<void> {
+    if (this.exporting || this.frames.length === 0) return;
+    this.setExporting(true);
+    try {
+      const fps = parseInt(this.elements.fpsSelect.value, 10) || 24;
+      const delay = Math.max(1, Math.round(100 / fps)); // GIF delays are in centiseconds
+      const size = this.getExportCanvasSize(1280);
+      const tmp = document.createElement('canvas');
+      tmp.width = size.width;
+      tmp.height = size.height;
+      const ctx = tmp.getContext('2d', { willReadFrequently: true })!;
+      const gif = GIFEncoder();
+
+      this.elements.onStatus?.('Generuji GIF...');
+      const images = await this.loadImages(this.frames);
+      for (const img of images) {
+        ctx.clearRect(0, 0, size.width, size.height);
+        ctx.drawImage(img, 0, 0, size.width, size.height);
+        const { data } = ctx.getImageData(0, 0, size.width, size.height);
+        const palette = quantize(data, 256);
+        const index = applyPalette(data, palette);
+        gif.writeFrame(index, size.width, size.height, { palette, delay });
+      }
+      gif.finish();
+      this.downloadBlob(new Blob([gif.bytes()], { type: 'image/gif' }), `stop-motion-${this.dateStamp()}.gif`);
+      this.elements.onStatus?.('GIF export uložen.');
+    } catch (err) {
+      console.error('GIF export failed:', err);
+      this.elements.onStatus?.('Chyba při exportu GIF.');
+    } finally {
+      this.setExporting(false);
+    }
+  }
+
+  /** Downloads all frames as PNG files inside a ZIP archive (original size). */
+  private exportZip(): void {
+    if (this.exporting || this.frames.length === 0) return;
+    this.setExporting(true);
+    try {
+      const files: Record<string, Uint8Array> = {};
+      this.frames.forEach((frame, i) => {
+        const base64 = frame.dataUrl.split(',')[1];
+        if (!base64) return;
+        files[`frame-${String(i + 1).padStart(3, '0')}.png`] = this.base64ToBytes(base64);
+      });
+      const zipped = zipSync(files, { level: 6 });
+      this.downloadBlob(
+        new Blob([zipped], { type: 'application/zip' }),
+        `stop-motion-frames-${this.dateStamp()}.zip`
+      );
+      this.elements.onStatus?.('PNG snímky staženy (ZIP).');
+    } catch (err) {
+      console.error('ZIP export failed:', err);
+      this.elements.onStatus?.('Chyba při exportu ZIP.');
+    } finally {
+      this.setExporting(false);
+    }
+  }
+
+  private async loadImages(frames: StopMotionFrame[]): Promise<HTMLImageElement[]> {
+    const images: HTMLImageElement[] = [];
+    for (const frame of frames) {
+      const img = new Image();
+      img.src = frame.dataUrl;
+      images.push(img);
+    }
+    try {
+      await Promise.all(images.map((img) => img.decode()));
+    } catch {
+      // decode() can reject on some browsers; fall back to exporting anyway.
+    }
+    return images;
+  }
+
+  private getExportCanvasSize(maxWidth: number): { width: number; height: number } {
+    const base = this.elements.playCanvas;
+    const scale = Math.min(1, maxWidth / base.width);
+    return {
+      width: Math.max(1, Math.round(base.width * scale)),
+      height: Math.max(1, Math.round(base.height * scale)),
+    };
+  }
+
+  private base64ToBytes(base64: string): Uint8Array {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+  }
+
+  private downloadBlob(blob: Blob, filename: string): void {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.style.display = 'none';
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 1000);
+  }
+
+  private getSupportedMimeType(): string {
+    const types = [
+      'video/webm;codecs=vp9,opus',
+      'video/webm;codecs=vp8,opus',
+      'video/webm',
+      'video/mp4;codecs=h264',
+      'video/mp4',
+    ];
+    for (const type of types) {
+      if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(type)) {
+        return type;
+      }
+    }
+    return 'video/webm';
+  }
+
+  private dateStamp(): string {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  private setExporting(busy: boolean): void {
+    this.exporting = busy;
+    this.updateButtons();
+  }
+
   private updateButtons(): void {
     const count = this.frames.length;
+    const busy = this.exporting;
     const hasSelection = this.selectedIndex !== null && count > 0;
-    this.elements.btnDelete.disabled = !hasSelection;
-    this.elements.btnDuplicate.disabled = !hasSelection;
-    this.elements.btnPlay.disabled = count === 0;
-    this.elements.btnLeft.disabled = !hasSelection || this.selectedIndex === 0;
-    this.elements.btnRight.disabled = !hasSelection || this.selectedIndex === count - 1;
+
+    this.elements.btnSnap.disabled = busy;
+    this.elements.btnDelete.disabled = busy || !hasSelection;
+    this.elements.btnDuplicate.disabled = busy || !hasSelection;
+    this.elements.btnPlay.disabled = busy || count === 0;
+    this.elements.btnLeft.disabled = busy || !hasSelection || this.selectedIndex === 0;
+    this.elements.btnRight.disabled = busy || !hasSelection || this.selectedIndex === count - 1;
+    this.elements.btnExportWebm.disabled = busy || count === 0;
+    this.elements.btnExportGif.disabled = busy || count === 0;
+    this.elements.btnExportZip.disabled = busy || count === 0;
   }
 }

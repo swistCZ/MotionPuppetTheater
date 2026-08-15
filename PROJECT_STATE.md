@@ -61,9 +61,11 @@
     * [x] **manual fine-tuning** - drag rig part pivots directly on the stage with the mouse (Pixi `eventMode`; arms/legs/head rotate around their joint, body moves the whole puppet; movable respects the config flag; auto pose update is suspended while a part is dragged).
   * [x] Frame strip with thumbnails: select, delete, **duplicate**, reorder (&larr;/&rarr;).
   * [x] **Onion skin** (ghost of the selected frame at 40% alpha behind the live stage; toggle button).
-* **Phase 2 - Playback & export (all three formats):**
-  * Frame playback at selectable fps (12/24).
-  * Export **WebM** (reuse `StageRecorder` during playback), **GIF**, and **PNG frames as ZIP**.
+* **Phase 2 - Playback & export (DONE, all three formats):**
+  * [x] Frame playback at selectable fps (12/24).
+  * [x] Export **WebM/MP4** (MediaRecorder + `captureStream(0)`/`requestFrame()` on the playback overlay, records at the selected fps),
+  * [x] Export **GIF** (via `gifenc`; frames quantized to 256 colors, capped at 1280px wide, per-frame delay from the fps),
+  * [x] Export **PNG frames as ZIP** (via `fflate`; original-resolution PNGs).
 * **Phase 3 - Background (two independent choices):**
   * **Full-frame chroma key green** (uniform `#00B140`) so the whole image can be keyed out and composited into another scene/video.
   * **Long horizontal image strip** loaded by the user - a viewport window over it, panned manually via a slider or **auto-advancing a fixed step per captured frame** (parallax / camera-pan feel).

@@ -85,7 +85,14 @@ class AppManager {
         btnRight: document.getElementById('sm-btn-right') as HTMLButtonElement,
         btnPlay: document.getElementById('sm-btn-play') as HTMLButtonElement,
         btnOnion: document.getElementById('sm-btn-onion') as HTMLButtonElement,
+        btnExportWebm: document.getElementById('sm-btn-export-webm') as HTMLButtonElement,
+        btnExportGif: document.getElementById('sm-btn-export-gif') as HTMLButtonElement,
+        btnExportZip: document.getElementById('sm-btn-export-zip') as HTMLButtonElement,
         fpsSelect: document.getElementById('sm-fps') as HTMLSelectElement,
+        onStatus: (message: string) => {
+          this.showStatus(message);
+          setTimeout(() => this.hideStatus(), 3000);
+        },
       }
     );
 

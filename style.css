@@ -296,6 +296,13 @@ body {
   flex-wrap: wrap;
 }
 
+.sm-separator {
+  width: 1px;
+  align-self: stretch;
+  background: var(--panel-border);
+  margin: 0 4px;
+}
+
 .sm-frame-strip {
   display: flex;
   align-items: center;
