@@ -2,6 +2,7 @@ import { Application, Container, Sprite, Graphics, Assets, Texture, Text, TextSt
 import { HandState, clamp, shortestAngleDelta, spreadFactor, Point2D } from './gestures';
 import { CutoutRigConfig, armRotation } from './rig';
 import { RigRenderParts, buildRigParts, fetchRigConfig, loadLocalCharacterConfig } from './rigAssets';
+import { ChainProp } from './chainProp';
 
 export type PuppetPreset = 'fox' | 'robot' | 'custom' | 'none' | `rig:${string}`;
 
@@ -81,6 +82,9 @@ export class PuppetRenderer {
   // Motion Freeze
   private isFrozen: boolean = false;
 
+  // Chain prop (e.g. a garland of leaves) following the tracked hand.
+  private chainProp!: ChainProp;
+
   // Manual pose editing (stop-motion fine-tuning): drag rig parts directly.
   private poseEditing: boolean = false;
   private dragInfo: Map<Sprite, PartDragInfo> = new Map();
@@ -147,6 +151,12 @@ export class PuppetRenderer {
     this.thereminContainer.visible = false;
     this.app.stage.addChild(this.thereminContainer);
 
+    // Chain prop (leaves/garland) rendered on top, driven by the ticker.
+    this.chainProp = new ChainProp();
+    this.app.stage.addChild(this.chainProp.getContainer());
+    this.chainProp.setEnabled(false);
+    this.app.ticker.add((ticker) => this.updateChain(ticker.deltaMS));
+
     // Initial position offscreen
     this.leftPuppet.container.position.set(-300, -300);
     this.rightPuppet.container.position.set(-300, -300);
@@ -188,6 +198,25 @@ export class PuppetRenderer {
    */
   public setFrozen(frozen: boolean): void {
     this.isFrozen = frozen;
+  }
+
+  /** Shows/hides the chain prop (garland of leaves) attached to the hand. */
+  public setChainPropEnabled(enabled: boolean): void {
+    if (this.chainProp) {
+      const anchor = this.lastLeftState?.smoothedPosition ?? this.lastRightState?.smoothedPosition;
+      this.chainProp.setEnabled(enabled, anchor?.x ?? this.width / 2, anchor?.y ?? 40);
+    }
+  }
+
+  public isChainPropEnabled(): boolean {
+    return this.chainProp?.isEnabled() ?? false;
+  }
+
+  private updateChain(dtMs: number): void {
+    if (!this.chainProp?.isEnabled()) return;
+    const anchor = this.lastLeftState?.smoothedPosition ?? this.lastRightState?.smoothedPosition;
+    if (!anchor) return;
+    this.chainProp.update(dtMs, anchor.x, anchor.y);
   }
 
   /**

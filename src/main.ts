@@ -496,6 +496,16 @@ class AppManager {
       this.renderer.setStripOffset(this.smStripOffset);
     };
 
+    // Toggle the chain prop (garland of leaves) that follows the hand.
+    const smBtnLeaves = document.getElementById('sm-btn-leaves') as HTMLButtonElement;
+    smBtnLeaves.addEventListener('click', () => {
+      const active = this.renderer.isChainPropEnabled();
+      this.renderer.setChainPropEnabled(!active);
+      smBtnLeaves.classList.toggle('btn-primary', !active);
+      this.showStatus(!active ? 'Řetěz listí zapnut — sleduje ruku.' : 'Řetěz listí vypnut.');
+      setTimeout(() => this.hideStatus(), 2000);
+    });
+
     // Preset Selection
     selectLeftPuppet.addEventListener('change', async (e) => {
       const preset = (e.target as HTMLSelectElement).value as PuppetPreset;

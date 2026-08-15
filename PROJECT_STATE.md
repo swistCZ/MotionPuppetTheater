@@ -70,8 +70,8 @@
   * [x] **Full-frame chroma key green** (uniform `#00B140`, `Zelená` button) so the whole image can be keyed out and composited into another scene/video.
   * [x] **Long horizontal image strip** (`Pruh` upload) rendered as a TilingSprite behind the puppets - a viewport window is visible, panned by a **manual slider** or **auto-advancing a fixed step per captured frame** (`Krok` input, applied after each Snímek via `onAfterSnap`).
   * [x] Background reset (`Výchozí`) restores the default solid color.
-* **Phase 4 - Props / connected chains (leaves as first use-case):**
-  * Generic prop system: a chain of N connected, differently-sized elements (e.g. a garland of leaves) attached to the tracked hand point, with secondary flutter motion. Generalizable to ribbons, beads, branches, etc.
+* **Phase 4 - Props / connected chains (DONE, leaves as first use-case):**
+  * [x] Generic **chain prop** (`src/chainProp.ts`): N connected leaves attached to the tracked hand point. Verlet physics give gravity + inertia (secondary motion), each leaf flutters with a phase-shifted sine, and leaves come in varying sizes. `Listí` button toggles it in the stop-motion panel; the chain anchors to the left (or right) hand. Generalizable to ribbons, beads, branches (swap the generated leaf texture / tune `DEFAULT_CHAIN_CONFIG`).
 * **Additional ideas (deferred):**
   * Registration marks / grid overlay for aligning frames on top of each other (position/scale consistency).
   * **A/B flip** - quick toggle between the previous and current frame to spot small movements (stop-motion classic).
