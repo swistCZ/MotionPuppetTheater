@@ -147,7 +147,9 @@ export class PuppetRenderer {
       autoDensity: true,
     });
 
-    parentElement.appendChild(this.app.canvas as HTMLCanvasElement);
+    const pixiCanvas = this.app.canvas as HTMLCanvasElement;
+    pixiCanvas.classList.add('pixi-canvas');
+    parentElement.appendChild(pixiCanvas);
 
     // Add background graphics
     this.app.stage.addChild(this.bgGraphics);
@@ -726,6 +728,10 @@ export class PuppetRenderer {
   }
 
   public hideHand(handType: 'Left' | 'Right'): void {
+    // Manual-placement mode: a running camera must not be able to move or
+    // hide a puppet the user has arranged by hand (it would also make the
+    // "nothing stays where I put it" symptom even with the stage visible).
+    if (!this.handFollowEnabled) return;
     const puppet = handType === 'Left' ? this.leftPuppet : this.rightPuppet;
     puppet.container.position.set(-500, -500);
     if (handType === 'Left') this.lastLeftState = undefined;
