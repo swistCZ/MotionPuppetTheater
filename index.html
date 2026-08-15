@@ -25,6 +25,7 @@
           <button id="btn-sim" class="btn btn-secondary" title="Simulace rukou bez kamery (tělo = myš, paže = animace)">Simulace</button>
           <a href="./builder.html" class="btn btn-secondary" title="Sestavit vlastní vystřihovánkovou loutku">Builder</a>
           <button id="btn-stop-motion" class="btn btn-secondary" title="Přepnout do stop-motion režimu (snímání po snímcích)">Stop-motion</button>
+          <button id="btn-help" class="btn btn-secondary" title="Nápověda – manuál ovládání a popis funkcí">Nápověda</button>
         </div>
 
         <div class="control-group">
@@ -149,6 +150,111 @@
           <div id="sm-frame-strip" class="sm-frame-strip"></div>
         </section>
       </main>
+    </div>
+
+    <!-- Help / Manual Modal -->
+    <div id="help-modal" class="help-modal hidden">
+      <div class="help-modal-backdrop" data-help-close></div>
+      <div class="help-modal-content" role="dialog" aria-modal="true" aria-labelledby="help-title">
+        <header class="help-modal-header">
+          <h2 id="help-title">Nápověda a manuál</h2>
+          <button id="btn-help-close" class="help-modal-close" title="Zavřít (Esc)" aria-label="Zavřít">&times;</button>
+        </header>
+        <div class="help-modal-body">
+
+          <section class="help-section">
+            <h3>Začínáme</h3>
+            <ul class="help-list">
+              <li><strong>Kamera</strong> – spustí webkameru. Aplikace sleduje ruce a každý prst ovládá jednu část loutky. Pro kvalitní detekci potřebuješ dostatek světla a ruku přiměřeně daleko od kamery.</li>
+              <li>Bez kamery můžeš vyzkoušet <strong>Simulaci</strong> – loutka sleduje myš a paže se hýbou samy.</li>
+            </ul>
+          </section>
+
+          <section class="help-section">
+            <h3>Ovládání loutky rukou</h3>
+            <ul class="help-list">
+              <li><strong>Dlaň</strong> – pohybuje celou loutkou.</li>
+              <li><strong>Ukazováček</strong> – zvedá/sklání hlavu a otevírá/zavírá pusu.</li>
+              <li><strong>Palec</strong> – pohání levou paži, <strong>prostředníček</strong> pravou paži.</li>
+              <li><strong>Prsteník</strong> – levou nohu, <strong>malíček</strong> pravou nohu (chůze).</li>
+              <li><strong>Roztažené prsty</strong> – větší rozsah končetin a rozkročení; <strong>sevřená pěst</strong> je přitáhne k tělu.</li>
+              <li><strong>Náklon dlaně</strong> – loutku jemně naklání; sevření palce a ukazováčku zavře pusu.</li>
+            </ul>
+          </section>
+
+          <section class="help-section">
+            <h3>Hlavní lišta</h3>
+            <ul class="help-list">
+              <li><strong>Kamera</strong> – spustí / zastaví webkameru.</li>
+              <li><strong>Nahrávat</strong> – nahraje video plátna (60 FPS) včetně theremin zvuku a stáhne soubor.</li>
+              <li><strong>Debug</strong> – ukáže detekční kostru rukou.</li>
+              <li><strong>Pohyb</strong> – zamkne / odemkne loutky (zmrazení pózy).</li>
+              <li><strong>Theremin</strong> – zapne digitální theremin: levá ruka řídí výšku tónu, pravá hlasitost.</li>
+              <li><strong>Simulace</strong> – test bez kamery.</li>
+              <li><strong>Builder</strong> – sestavení vlastní vystřihovánkové loutky z obrázků (samostatná stránka).</li>
+              <li><strong>Stop-motion</strong> – přepne do stop-motion režimu (níže).</li>
+              <li><strong>L1 / L2</strong> – výběr loutky pro levou a pravou ruku (Liška, Robot, Prázdné, nebo vlastní rig). <strong>PNG</strong> nahraje vlastní obrázek loutky.</li>
+              <li><strong>Scéna</strong> – barva pozadí; <strong>Pozadí</strong> nahraje vlastní obrázek na pozadí.</li>
+            </ul>
+          </section>
+
+          <section class="help-section">
+            <h3>Stop-motion režim</h3>
+            <ul class="help-list">
+              <li>Zapni <strong>Stop-motion</strong> – dole se objeví časová osa. Pohyb rukou animuje loutku po snímcích.</li>
+              <li><strong>Pěst</strong> – zamkne aktuální pózu (ruku můžeš odtáhnout, loutka zůstane stát).</li>
+              <li><strong>Prostředníček vztyčený</strong> – přiblíží scénu (zoom až 1,6×) pro detailní pózování.</li>
+              <li><strong>Tažení myší</strong> – klikni a táhni pohyblivé části loutky (paže, nohy, hlava, tělo) pro doladění pózy.</li>
+              <li><strong>Mezerník</strong> – uloží aktuální scénu jako snímek (ekvivalent tlačítka Snímek).</li>
+            </ul>
+          </section>
+
+          <section class="help-section">
+            <h3>Stop-motion – časová osa</h3>
+            <ul class="help-list">
+              <li><strong>Snímek</strong> – uloží aktuální scénu jako PNG.</li>
+              <li><strong>Smazat / Duplikovat</strong> – smaže / zkopíruje vybraný snímek; <strong>&larr; &rarr;</strong> jej přeřadí.</li>
+              <li><strong>Zpět / Znovu</strong> – vrací a opakuje úpravy časové osy; <strong>Vše</strong> smaže celou osu.</li>
+              <li><strong>Přehrát</strong> – přehraje snímky; <strong>Opakovat</strong> smyčku; <strong>Zpětně</strong> přehrávání od konce.</li>
+              <li><strong>FPS</strong> – rychlost přehrávání (12 nebo 24).</li>
+              <li><strong>Onion</strong> – průsvitný duch vybraného snímku pod živou scénou; <strong>Duchů</strong> určuje počet duchů (1–3).</li>
+              <li><strong>Mřížka</strong> – registrační mřížka pro zarovnání snímků na sebe.</li>
+              <li><strong>A/B</strong> – přepíná mezi živou scénou a vybraným snímkem (kontrola malých pohybů).</li>
+            </ul>
+          </section>
+
+          <section class="help-section">
+            <h3>Stop-motion – pozadí a rekvizity</h3>
+            <ul class="help-list">
+              <li><strong>Zelená</strong> – vyplní scénu klíčovací zelenou (chroma key) pro kompozici do jiné scény.</li>
+              <li><strong>Barva</strong> – zvolí vlastní barvu pozadí.</li>
+              <li><strong>Pruh</strong> – nahraje vzdálený pás pozadí; posouvá se posuvníkem nebo automaticky (<strong>Krok</strong> px na každý snímek).</li>
+              <li><strong>Pruh 2</strong> – nahraje blízký pás, který se posouvá rychleji; <strong>Paralaxa</strong> určuje poměr (default 1,6×) – iluze hloubky.</li>
+              <li><strong>Výchozí</strong> – vrátí základní pozadí.</li>
+              <li><strong>Listí</strong> – zapne řetěz listí (prop), který sleduje ruku.</li>
+            </ul>
+          </section>
+
+          <section class="help-section">
+            <h3>Export animace</h3>
+            <ul class="help-list">
+              <li><strong>WebM</strong> – video z časové osy; když je zapnutý theremin, přidá se do videa jako zvuk.</li>
+              <li><strong>GIF</strong> – animovaný obrázek (256 barev, šířka max 1280 px).</li>
+              <li><strong>PNG (ZIP)</strong> – stáhne všechny snímky v původním rozlišení v ZIP archivu.</li>
+            </ul>
+          </section>
+
+          <section class="help-section">
+            <h3>Vlastní loutky (Builder)</h3>
+            <ul class="help-list">
+              <li>Na stránce <a class="help-link" href="./builder.html">Builder</a> nahraj až 6 částí (tělo + hlava + paže + nohy), klikáním umísti klouby a urči, které části jsou pohyblivé.</li>
+              <li>Hotovou loutku <strong>Uložíš do prohlížeče</strong> (objeví se v seznamu L1/L2) nebo exportuješ <code>config.json</code>.</li>
+            </ul>
+            <p class="help-note">Zavřít lze tlačítkem &times;, kliknutím mimo okno nebo klávesou Esc.</p>
+          </section>
+
+        </div>
+      </div>
     </div>
 
     <script type="module" src="./src/main.ts"></script>

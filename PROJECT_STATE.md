@@ -44,6 +44,7 @@
 * [x] **Motion Freeze honored everywhere**: freeze is enforced inside `PuppetRenderer.updateHandState` (via `setFrozen`), so it now also locks puppets while the hand simulator is driving them.
 * [x] **Theremin full stop**: toggling off ramps the gain, then stops the oscillator and disconnects the gain graph + stream destination; the next toggle rebuilds the nodes.
 * [x] **Stop-motion polish pass** (branch `feat/stop-motion`): middle-finger camera zoom, two-layer strip parallax, custom background color, loop/reverse playback, registration grid, A/B flip, undo/redo, Theremin soundtrack in WebM export, onion ghost count 1-3, Space = snap, clear-all. 25 unit tests green.
+* [x] **In-app manual** (`Nápověda` button): modal with sections for hand control (finger-to-limb map), main toolbar, stop-motion gestures & timeline, backgrounds, export and the builder; closes via button, backdrop click or Esc.
 
 ## 3. Active Task & Next Steps
 * **Active Task:** Six-part rig + professional builder UI complete; preset cleanup, mild in-plane rotation, finger-splay limb spread, and the camera/model/freeze/theremin robustness fixes all shipped (build & 19 tests green). Character list is auto-generated (Vite plugin scans `public/characters/` for folders with a valid `config.json`; dev serves it live, build emits `index.json`). Waiting on user to re-cut the rabbit (and add dog, snail, etc.) into separate part files and assemble them via `/builder.html`.

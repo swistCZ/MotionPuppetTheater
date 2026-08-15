@@ -571,6 +571,26 @@ class AppManager {
       setTimeout(() => this.hideStatus(), 2000);
     });
 
+    // Help / manual modal (open via button, backdrop or Esc).
+    const helpModal = document.getElementById('help-modal') as HTMLElement;
+    const btnHelp = document.getElementById('btn-help') as HTMLButtonElement;
+    const btnHelpClose = document.getElementById('btn-help-close') as HTMLButtonElement;
+
+    const closeHelp = (): void => {
+      helpModal.classList.add('hidden');
+    };
+
+    btnHelp.addEventListener('click', () => {
+      helpModal.classList.remove('hidden');
+    });
+    btnHelpClose.addEventListener('click', closeHelp);
+    helpModal.addEventListener('click', (e) => {
+      if ((e.target as HTMLElement).dataset.helpClose !== undefined) closeHelp();
+    });
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !helpModal.classList.contains('hidden')) closeHelp();
+    });
+
     // Preset Selection
     selectLeftPuppet.addEventListener('change', async (e) => {
       const preset = (e.target as HTMLSelectElement).value as PuppetPreset;
