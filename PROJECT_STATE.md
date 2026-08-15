@@ -93,6 +93,16 @@
   * [x] Onion skin auto-enables when entering stop-motion mode.
 
 ## 4. Known Issues / Technical Debt / Blockers
+* **Stop-motion thumbnail image preview in browser (Opera GX / Chromium WebGL buffer read):**
+  * *Příznak:* Na časové ose přibývají rámečky snímků, funguje jejich výběr, drag & drop, načtení pózy i přepsání, ale uvnitř náhledových rámečků se nezobrazuje obsah snímku (je černý / prázdný).
+  * *Co bylo zkoušeno:*
+    1. `preserveDrawingBuffer: true` v `app.init` – dříve částečně pomohlo na černý snap, ale při dalších změnách stále přetrvával černý náhled.
+    2. `app.renderer.extract.base64(stage)` / `extract.canvas` – selhalo, protože Pixi v8 `extract` bez zadaného explicitního rámce interně mutuje transformační matici `stage` a posouvá celou scénu.
+    3. `textureGenerator.generateTexture({ frame, resolution: 1 })` + `texture.generateCanvas()` – vyrenderuje oddělenou texturu bez posunu scény, ale v některých konfiguracích GPU/Chromium stále vrací prázdná data.
+    4. Duální pipeline s 2D `thumbCanvas.drawImage(webglCanvas)` – selhalo, protože první čtení bufferu vyprázdnilo WebGL framebuffer před dalším voláním.
+    5. HTML/CSS změny: absolutní pozicování `img`, odstranění `loading="lazy"`, nahrazení `<button>` za `<div role="button">`.
+    6. `gl.flush()` + `gl.finish()` před `toDataURL()` pro synchronizaci GPU pipeline.
+  * *Doporučený další krok pro budoucí řešení:* Použít přímý export přes `app.renderer.extract.pixels()` (čisté pole RGBA pixelů převedené do `ImageData` na samostatném 2D canvasu), nebo generovat náhledy znovuvykreslením uloženého `pose` stavu na dedikovaném 2D canvasu zcela mimo WebGL.
 * Builder exports data-URL images (self-contained single file, slightly larger JSON) - fine for dev; swap for file paths in `config.json` if bundle size matters.
 * Rig arms rotate rigidly around the shoulder (simplified v1); no elbow/knee IK yet.
 * Full-page manuscript scans include background clutter - prefer isolated single-figure crops when adding new characters.
