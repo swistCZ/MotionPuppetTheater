@@ -766,8 +766,10 @@ class AppManager {
       }
     }
 
-    // Handle missing hand frames
-    if (!this.isMotionFrozen) {
+    // Handle missing hand frames. In stop-motion mode a lost hand must NOT
+    // remove the puppet from the stage - the user is framing a shot and needs
+    // the puppet to stay visible (and draggable) even with no hand in view.
+    if (!this.isMotionFrozen && !this.stopMotionActive) {
       (['Left', 'Right'] as const).forEach((hand) => {
         if (!detectedHands.has(hand)) {
           const count = (this.missingFrames.get(hand) || 0) + 1;

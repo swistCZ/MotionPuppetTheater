@@ -36,6 +36,9 @@ interface DynamicPuppet {
   customSpriteClosed?: Sprite;
   customSpriteOpen?: Sprite;
   rig?: RigPuppetState;
+  /** Manual mouse overrides for procedural parts (stop-motion framing). A real
+   * hand frame clears them so the hands drive the puppet again. */
+  manualPose?: Partial<Record<RigPartKey, Point2D>>;
 }
 
 type RigPartKey = 'body' | 'leftArm' | 'rightArm' | 'leftLeg' | 'rightLeg' | 'head';
@@ -53,6 +56,8 @@ interface ActiveDrag {
   startRotation: number;
   startContainerPos: Point2D;
   jointGlobal: Point2D;
+  startLocal?: Point2D;
+  procedural?: boolean;
 }
 
 export class PuppetRenderer {
@@ -101,6 +106,7 @@ export class PuppetRenderer {
   // Manual pose editing (stop-motion fine-tuning): drag rig parts directly.
   private poseEditing: boolean = false;
   private dragInfo: Map<Sprite, PartDragInfo> = new Map();
+  private procDragTargets: Map<Container, PartDragInfo> = new Map();
   private activeDrag: ActiveDrag | null = null;
 
   private width: number;
@@ -298,28 +304,56 @@ export class PuppetRenderer {
     this.dragInfo.clear();
 
     for (const puppet of [this.leftPuppet, this.rightPuppet]) {
-      if (!puppet.rig) continue;
-      const { parts, config } = puppet.rig;
+      if (puppet.rig) {
+        const { parts, config } = puppet.rig;
 
-      const entries: Array<{ sprite?: Sprite; part: RigPartKey; movable: boolean }> = [
-        { sprite: parts.bodySprite, part: 'body', movable: true },
-        { sprite: parts.leftArmSprite, part: 'leftArm', movable: !!config.parts.leftArm.movable },
-        { sprite: parts.rightArmSprite, part: 'rightArm', movable: !!config.parts.rightArm.movable },
-        { sprite: parts.leftLegSprite, part: 'leftLeg', movable: !!config.parts.leftLeg?.movable },
-        { sprite: parts.rightLegSprite, part: 'rightLeg', movable: !!config.parts.rightLeg?.movable },
-        { sprite: parts.headSprite, part: 'head', movable: !!config.parts.head?.movable },
+        const entries: Array<{ sprite?: Sprite; part: RigPartKey; movable: boolean }> = [
+          { sprite: parts.bodySprite, part: 'body', movable: true },
+          { sprite: parts.leftArmSprite, part: 'leftArm', movable: !!config.parts.leftArm.movable },
+          { sprite: parts.rightArmSprite, part: 'rightArm', movable: !!config.parts.rightArm.movable },
+          { sprite: parts.leftLegSprite, part: 'leftLeg', movable: !!config.parts.leftLeg?.movable },
+          { sprite: parts.rightLegSprite, part: 'rightLeg', movable: !!config.parts.rightLeg?.movable },
+          { sprite: parts.headSprite, part: 'head', movable: !!config.parts.head?.movable },
+        ];
+
+        for (const entry of entries) {
+          if (!entry.sprite) continue;
+          const sprite = entry.sprite;
+          sprite.eventMode = enabled && entry.movable ? 'static' : 'none';
+          sprite.cursor = enabled && entry.movable ? 'pointer' : 'default';
+          if (enabled) {
+            this.dragInfo.set(sprite, { puppet, part: entry.part });
+            sprite.on('pointerdown', this.onPartPointerDown);
+          } else {
+            sprite.off('pointerdown', this.onPartPointerDown);
+          }
+        }
+        continue;
+      }
+
+      // Procedural puppets (fox/robot/custom): make every part draggable with
+      // the mouse so stop-motion framing works without camera/gesture input.
+      const procTargets: Array<{ target: Container; part: RigPartKey }> = [
+        { target: puppet.torso, part: 'body' },
+        { target: puppet.headGraphic, part: 'head' },
+        { target: puppet.leftArm, part: 'leftArm' },
+        { target: puppet.rightArm, part: 'rightArm' },
+        { target: puppet.leftLeg, part: 'leftLeg' },
+        { target: puppet.rightLeg, part: 'rightLeg' },
       ];
-
-      for (const entry of entries) {
-        if (!entry.sprite) continue;
-        const sprite = entry.sprite;
-        sprite.eventMode = enabled && entry.movable ? 'static' : 'none';
-        sprite.cursor = enabled && entry.movable ? 'pointer' : 'default';
+      if (puppet.preset === 'custom' && puppet.customSpriteClosed) {
+        procTargets.push({ target: puppet.customSpriteClosed, part: 'body' });
+        if (puppet.customSpriteOpen) procTargets.push({ target: puppet.customSpriteOpen, part: 'body' });
+      }
+      for (const { target, part } of procTargets) {
+        target.eventMode = enabled ? 'static' : 'none';
+        target.cursor = enabled ? 'pointer' : 'default';
         if (enabled) {
-          this.dragInfo.set(sprite, { puppet, part: entry.part });
-          sprite.on('pointerdown', this.onPartPointerDown);
+          this.procDragTargets.set(target, { puppet, part });
+          target.on('pointerdown', this.onProcPartPointerDown);
         } else {
-          sprite.off('pointerdown', this.onPartPointerDown);
+          this.procDragTargets.delete(target);
+          target.off('pointerdown', this.onProcPartPointerDown);
         }
       }
     }
@@ -366,15 +400,55 @@ export class PuppetRenderer {
     }
   };
 
+  private onProcPartPointerDown = (e: FederatedPointerEvent): void => {
+    if (!this.poseEditing) return;
+    const target = e.currentTarget as Container;
+    const info = this.procDragTargets.get(target);
+    if (!info) return;
+
+    const puppet = info.puppet;
+    const isBody = info.part === 'body';
+    this.activeDrag = {
+      puppet,
+      part: info.part,
+      startPointer: { x: e.global.x, y: e.global.y },
+      startRotation: 0,
+      startContainerPos: { x: puppet.container.position.x, y: puppet.container.position.y },
+      jointGlobal: { x: 0, y: 0 },
+      startLocal: isBody ? undefined : puppet.container.toLocal({ x: e.global.x, y: e.global.y }),
+      procedural: true,
+    };
+  };
+
   private onStagePointerMove = (e: FederatedPointerEvent): void => {
     const drag = this.activeDrag;
     if (!drag) return;
 
     if (drag.part === 'body') {
+      // Convert the pointer delta into world (zoom-corrected) space so the
+      // puppet stays under the cursor even while the stage is zoomed.
+      const startWorld = this.worldContainer.toLocal({ x: drag.startPointer.x, y: drag.startPointer.y });
+      const nowWorld = this.worldContainer.toLocal({ x: e.global.x, y: e.global.y });
       drag.puppet.container.position.set(
-        drag.startContainerPos.x + (e.global.x - drag.startPointer.x),
-        drag.startContainerPos.y + (e.global.y - drag.startPointer.y)
+        drag.startContainerPos.x + (nowWorld.x - startWorld.x),
+        drag.startContainerPos.y + (nowWorld.y - startWorld.y)
       );
+      return;
+    }
+
+    if (drag.procedural) {
+      const puppet = drag.puppet;
+      const local = puppet.container.toLocal({ x: e.global.x, y: e.global.y });
+      if (!puppet.manualPose) puppet.manualPose = {};
+      if (drag.part === 'head') {
+        puppet.headContainer.position.set(local.x, local.y);
+        puppet.manualPose.head = { x: local.x, y: local.y };
+        return;
+      }
+      if (drag.part === 'leftArm' || drag.part === 'rightArm' || drag.part === 'leftLeg' || drag.part === 'rightLeg') {
+        puppet.manualPose[drag.part] = { x: local.x, y: local.y };
+        this.renderProceduralPuppet(puppet);
+      }
       return;
     }
 
@@ -390,6 +464,84 @@ export class PuppetRenderer {
 
   private endDrag(): void {
     this.activeDrag = null;
+  }
+
+  /** Redraws a procedural puppet using its manual mouse overrides for any part
+   * that has been dragged, keeping every other part at the stored hand pose. */
+  private renderProceduralPuppet(puppet: DynamicPuppet): void {
+    if (puppet.rig || puppet.preset === 'custom' || puppet.preset === 'none') return;
+    const state = this.getLastHandStateForPuppet(puppet);
+    if (!state) return;
+    const manual = puppet.manualPose ?? {};
+    const limbColor = this.getPrimaryColorForPreset(puppet.preset);
+    const strokeColor = this.getSecondaryColorForPreset(puppet.preset);
+    const spread = spreadFactor(state.fingerSplay);
+    this.drawProceduralLimbs(puppet, state, manual, spread, limbColor, strokeColor);
+    const head = manual.head ?? state.limbs.head;
+    puppet.headContainer.position.set(head.x, head.y);
+  }
+
+  private getLastHandStateForPuppet(puppet: DynamicPuppet): HandState | undefined {
+    return puppet === this.leftPuppet ? this.lastLeftState : this.lastRightState;
+  }
+
+  /** Draws the four articulated limbs of a procedural puppet. `manual` holds
+   * mouse-dragged endpoints, which are drawn at their exact position (spread
+   * ignored); everything else follows the hand pose scaled by `spread`. */
+  private drawProceduralLimbs(
+    puppet: DynamicPuppet,
+    state: HandState,
+    manual: NonNullable<DynamicPuppet['manualPose']>,
+    spread: number,
+    limbColor: number,
+    strokeColor: number
+  ): void {
+    const end = (part: 'leftArm' | 'rightArm' | 'leftLeg' | 'rightLeg'): Point2D =>
+      manual[part] ?? { x: state.limbs[part].x * spread, y: state.limbs[part].y * spread };
+
+    // Left Arm (driven by Thumb)
+    const la = end('leftArm');
+    puppet.leftArm.clear();
+    puppet.leftArm
+      .moveTo(-25, -10)
+      .lineTo(la.x, la.y)
+      .stroke({ width: 12, color: strokeColor, cap: 'round' })
+      .circle(la.x, la.y, 10)
+      .fill(limbColor)
+      .stroke({ width: 3, color: strokeColor });
+
+    // Right Arm (driven by Middle Finger)
+    const ra = end('rightArm');
+    puppet.rightArm.clear();
+    puppet.rightArm
+      .moveTo(25, -10)
+      .lineTo(ra.x, ra.y)
+      .stroke({ width: 12, color: strokeColor, cap: 'round' })
+      .circle(ra.x, ra.y, 10)
+      .fill(limbColor)
+      .stroke({ width: 3, color: strokeColor });
+
+    // Left Leg (driven by Ring Finger)
+    const ll = end('leftLeg');
+    puppet.leftLeg.clear();
+    puppet.leftLeg
+      .moveTo(-20, 30)
+      .lineTo(ll.x, ll.y)
+      .stroke({ width: 14, color: strokeColor, cap: 'round' })
+      .ellipse(ll.x - 5, ll.y + 4, 14, 8)
+      .fill(limbColor)
+      .stroke({ width: 3, color: strokeColor });
+
+    // Right Leg (driven by Pinky Finger)
+    const rl = end('rightLeg');
+    puppet.rightLeg.clear();
+    puppet.rightLeg
+      .moveTo(20, 30)
+      .lineTo(rl.x, rl.y)
+      .stroke({ width: 14, color: strokeColor, cap: 'round' })
+      .ellipse(rl.x + 5, rl.y + 4, 14, 8)
+      .fill(limbColor)
+      .stroke({ width: 3, color: strokeColor });
   }
 
   public updateThereminVisuals(
@@ -674,7 +826,14 @@ export class PuppetRenderer {
     }
 
     // 1. Position Head based on Index Finger movement
-    puppet.headContainer.position.set(state.limbs.head.x, state.limbs.head.y);
+    // A manual mouse drag must win over the live hand while it is active, and
+    // a real hand frame clears the manual overrides so the hands drive the
+    // puppet again (unless hand-follow is switched off entirely).
+    if (this.activeDrag && this.activeDrag.puppet === puppet) return;
+    puppet.manualPose = undefined;
+    const manual: NonNullable<DynamicPuppet['manualPose']> = {};
+    const headPos = manual.head ?? state.limbs.head;
+    puppet.headContainer.position.set(headPos.x, headPos.y);
 
     // 2. Animate Jaw / Mouth opening directly driven by index finger bending
     puppet.jaw.position.y = state.mouthOpenRatio * 28;
@@ -685,46 +844,7 @@ export class PuppetRenderer {
 
     // Finger splay stretches the limbs outward (open palm) or tucks them in (fist).
     const spread = spreadFactor(state.fingerSplay);
-
-    // Left Arm (driven by Thumb)
-    puppet.leftArm.clear();
-    puppet.leftArm
-      .moveTo(-25, -10)
-      .lineTo(state.limbs.leftArm.x * spread, state.limbs.leftArm.y * spread)
-      .stroke({ width: 12, color: strokeColor, cap: 'round' })
-      .circle(state.limbs.leftArm.x * spread, state.limbs.leftArm.y * spread, 10)
-      .fill(limbColor)
-      .stroke({ width: 3, color: strokeColor });
-
-    // Right Arm (driven by Middle Finger)
-    puppet.rightArm.clear();
-    puppet.rightArm
-      .moveTo(25, -10)
-      .lineTo(state.limbs.rightArm.x * spread, state.limbs.rightArm.y * spread)
-      .stroke({ width: 12, color: strokeColor, cap: 'round' })
-      .circle(state.limbs.rightArm.x * spread, state.limbs.rightArm.y * spread, 10)
-      .fill(limbColor)
-      .stroke({ width: 3, color: strokeColor });
-
-    // Left Leg (driven by Ring Finger)
-    puppet.leftLeg.clear();
-    puppet.leftLeg
-      .moveTo(-20, 30)
-      .lineTo(state.limbs.leftLeg.x * spread, state.limbs.leftLeg.y * spread)
-      .stroke({ width: 14, color: strokeColor, cap: 'round' })
-      .ellipse(state.limbs.leftLeg.x * spread - 5, state.limbs.leftLeg.y * spread + 4, 14, 8)
-      .fill(limbColor)
-      .stroke({ width: 3, color: strokeColor });
-
-    // Right Leg (driven by Pinky Finger)
-    puppet.rightLeg.clear();
-    puppet.rightLeg
-      .moveTo(20, 30)
-      .lineTo(state.limbs.rightLeg.x * spread, state.limbs.rightLeg.y * spread)
-      .stroke({ width: 14, color: strokeColor, cap: 'round' })
-      .ellipse(state.limbs.rightLeg.x * spread + 5, state.limbs.rightLeg.y * spread + 4, 14, 8)
-      .fill(limbColor)
-      .stroke({ width: 3, color: strokeColor });
+    this.drawProceduralLimbs(puppet, state, manual, spread, limbColor, strokeColor);
   }
 
   public hideHand(handType: 'Left' | 'Right'): void {

@@ -64,7 +64,7 @@ Zapni **Stop-motion** — dole se objeví časová osa. Figurky se okamžitě zo
 - **Ruka (ZAP)** — tlačítko v panelu. Dokud svítí, ruce loutky ovládají (dlaň = pohyb, prsty = končetiny). **Vypni ho** pro přesné ruční umístění: loutky přestanou sledovat ruce a zůstanou, kam je táhneš myší — vidíš přesně, co se dostane do snímku, a můžeš to před uložením doladit.
 - **Pěst** — zamkne aktuální pózu (ruku můžeš odtáhnout, loutka zůstane stát). Uvolnění pěsti pózu odemkne.
 - **Prostředníček vztyčený** — přiblíží scénu (zoom až 1,6×, plynulý), pro detailní pózování. Ostatní prsty musí být schoulené.
-- **Tažení myší** — klikni a táhni pohyblivé části loutky (paže, nohy, hlava, tělo) pro jemné doladění pózy. Respektuje nastavení „pohyblivá/statická" část z configu loutky.
+- **Tažení myší** — klikni a táhni pohyblivé části loutky (tělo = přesun figurky, hlava, paže, nohy = jejich natočení/pozice). Funguje pro **všechny** loutky (liška, robot i rig z builderu) přímo v stop-motion režimu — není potřeba kamera ani gesta. Snímek pak vidíš přesně tak, jak bude uložen.
 - **Onion (duch)** — vybraný snímek se průsvitně promítá přes živou scénu, takže přesně vidíš, jak na sebe nová póza navazuje.
 - **Mezerník** — uloží aktuální scénu jako snímek (ekvivalent tlačítka Snímek).
 
