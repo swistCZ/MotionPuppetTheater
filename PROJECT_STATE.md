@@ -98,3 +98,9 @@
 * Full-page manuscript scans include background clutter - prefer isolated single-figure crops when adding new characters.
 * Puppet rotation is intentionally subtle and damped; a full 360° follow would require resolving the wrist→palm angle wrap against the container's smoothed rotation (out of scope).
 * `multiHandedness.label` is still unused by the spatial-proximity hand matcher — kept that way deliberately so crossing recovery and screen-half assignment stay deterministic (covered by unit tests).
+
+## 5. Backlog / Plánované funkce (TODO)
+* [ ] **Multi-puppet support (více než 2 figurky na scéně):**
+  * Při ovládání myší / stop-motion možnost přidat na scénu libovolný počet figurek (L1, L2, L3, ...).
+  * Možnost jednotlivé figurky ze scény odebírat / mazat.
+  * Dynamické UI pro správu figurek na scéně (výběr presetů, z-order / vrstvy pořadí figurek, focus na aktivní loutku).
