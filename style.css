@@ -289,6 +289,22 @@ body {
   display: block;
 }
 
+/* Registration grid overlay for aligning frames (below playback overlay). */
+.sm-grid-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 13;
+  display: none;
+}
+
+.sm-grid-canvas.active {
+  display: block;
+}
+
 .sm-controls {
   display: flex;
   align-items: center;

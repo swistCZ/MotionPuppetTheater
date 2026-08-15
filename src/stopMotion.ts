@@ -11,6 +11,7 @@ export interface StopMotionElements {
   strip: HTMLElement;
   onionCanvas: HTMLCanvasElement;
   playCanvas: HTMLCanvasElement;
+  gridCanvas: HTMLCanvasElement;
   btnSnap: HTMLButtonElement;
   btnDelete: HTMLButtonElement;
   btnDuplicate: HTMLButtonElement;
@@ -18,21 +19,36 @@ export interface StopMotionElements {
   btnRight: HTMLButtonElement;
   btnPlay: HTMLButtonElement;
   btnOnion: HTMLButtonElement;
+  btnGrid: HTMLButtonElement;
+  btnAb: HTMLButtonElement;
+  btnUndo: HTMLButtonElement;
+  btnRedo: HTMLButtonElement;
+  btnClear: HTMLButtonElement;
   btnExportWebm: HTMLButtonElement;
   btnExportGif: HTMLButtonElement;
   btnExportZip: HTMLButtonElement;
   fpsSelect: HTMLSelectElement;
+  ghostSelect: HTMLSelectElement;
   onStatus?: (message: string) => void;
   onAfterSnap?: () => void;
+  audioSource?: () => MediaStreamAudioDestinationNode | undefined;
 }
 
 const ONION_ALPHA = 0.4;
+const GRID_STEP = 96;
+const HISTORY_LIMIT = 50;
+
+interface TimelineSnapshot {
+  frames: StopMotionFrame[];
+  selectedIndex: number | null;
+}
 
 /**
  * Stop-motion timeline controller: captures snapshots of the Pixi stage as
  * frames, manages the thumbnail strip (select/delete/duplicate/reorder),
- * draws the onion-skin ghost behind the live stage and plays the frames back
- * on an overlay. Lives inside the stop-motion mode (toggled from the app bar).
+ * draws the onion-skin ghost behind the live stage, plays the frames back and
+ * exports them (WebM/MP4, GIF, PNG ZIP). Includes registration-grid and A/B
+ * flip overlays plus full undo/redo of timeline edits.
  */
 export class StopMotionController {
   private frames: StopMotionFrame[] = [];
@@ -41,10 +57,17 @@ export class StopMotionController {
   private playing: boolean = false;
   private playTimer: number | null = null;
   private playIndex: number = 0;
+  private exporting: boolean = false;
+  private modeActive: boolean = false;
+  private abMode: boolean = false;
+  private gridEnabled: boolean = false;
+  private ghostCount: number = 1;
+  private undoStack: TimelineSnapshot[] = [];
+  private redoStack: TimelineSnapshot[] = [];
 
   private onionCtx: CanvasRenderingContext2D;
   private playCtx: CanvasRenderingContext2D;
-  private exporting: boolean = false;
+  private gridCtx: CanvasRenderingContext2D;
 
   constructor(
     private canvasSource: () => HTMLCanvasElement,
@@ -52,6 +75,8 @@ export class StopMotionController {
   ) {
     this.onionCtx = elements.onionCanvas.getContext('2d')!;
     this.playCtx = elements.playCanvas.getContext('2d')!;
+    this.gridCtx = elements.gridCanvas.getContext('2d')!;
+    this.ghostCount = parseInt(elements.ghostSelect.value, 10) || 1;
 
     this.elements.btnSnap.addEventListener('click', () => this.snapFrame());
     this.elements.btnDelete.addEventListener('click', () => this.deleteSelected());
@@ -63,34 +88,67 @@ export class StopMotionController {
       else void this.startPlayback();
     });
     this.elements.btnOnion.addEventListener('click', () => this.toggleOnion());
+    this.elements.btnGrid.addEventListener('click', () => this.toggleGrid());
+    this.elements.btnAb.addEventListener('click', () => this.toggleAb());
+    this.elements.btnUndo.addEventListener('click', () => this.undo());
+    this.elements.btnRedo.addEventListener('click', () => this.redo());
+    this.elements.btnClear.addEventListener('click', () => this.clearAll());
     this.elements.btnExportWebm.addEventListener('click', () => void this.exportWebM());
     this.elements.btnExportGif.addEventListener('click', () => void this.exportGif());
     this.elements.btnExportZip.addEventListener('click', () => this.exportZip());
     this.elements.fpsSelect.addEventListener('change', () => {
       if (this.playing) this.restartPlayback();
     });
+    this.elements.ghostSelect.addEventListener('change', () => {
+      this.ghostCount = parseInt(this.elements.ghostSelect.value, 10) || 1;
+      this.updateOnion();
+    });
+
+    // Space bar captures a frame (capture phase so focused buttons don't
+    // double-trigger and the page never scrolls).
+    window.addEventListener(
+      'keydown',
+      (e) => {
+        if (e.code !== 'Space' || !this.modeActive) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (this.exporting || this.playing) return;
+        this.snapFrame();
+      },
+      true
+    );
   }
 
   public setModeActive(active: boolean): void {
+    this.modeActive = active;
     this.elements.panel.classList.toggle('hidden', !active);
-    if (!active) {
-      this.stopPlayback();
-      this.setOnionEnabled(false);
-      this.updateOnion();
+    if (active) {
+      // Onion skin is on by default so the previous frame is always visible
+      // while posing the next shot.
+      this.setOnionEnabled(true);
+      return;
     }
+    this.stopPlayback();
+    this.setOnionEnabled(false);
+    this.clearAb();
+    this.toggleGrid(false);
+    this.updateOnion();
   }
 
   public resize(width: number, height: number): void {
     const dpr = window.devicePixelRatio || 1;
-    this.elements.onionCanvas.width = Math.round(width * dpr);
-    this.elements.onionCanvas.height = Math.round(height * dpr);
-    this.elements.onionCanvas.style.width = `${width}px`;
-    this.elements.onionCanvas.style.height = `${height}px`;
-    this.elements.playCanvas.width = Math.round(width * dpr);
-    this.elements.playCanvas.height = Math.round(height * dpr);
-    this.elements.playCanvas.style.width = `${width}px`;
-    this.elements.playCanvas.style.height = `${height}px`;
+    for (const canvas of [
+      this.elements.onionCanvas,
+      this.elements.playCanvas,
+      this.elements.gridCanvas,
+    ]) {
+      canvas.width = Math.round(width * dpr);
+      canvas.height = Math.round(height * dpr);
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+    }
     this.updateOnion();
+    if (this.gridEnabled) this.drawGrid();
   }
 
   public getFrameCount(): number {
@@ -101,53 +159,92 @@ export class StopMotionController {
     return this.playing;
   }
 
+  // --- Timeline edits (all record undo history) ---
+
   public snapFrame(): void {
+    this.recordHistory();
     const canvas = this.canvasSource();
     const dataUrl = canvas.toDataURL('image/png');
     const id = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}`;
     this.frames.push({ id, dataUrl });
     this.selectedIndex = this.frames.length - 1;
-    this.renderStrip();
-    this.updateOnion();
-    this.updateButtons();
+    this.afterEdit();
     this.elements.onAfterSnap?.();
   }
 
   public deleteSelected(): void {
     if (this.selectedIndex === null) return;
+    this.recordHistory();
     this.frames.splice(this.selectedIndex, 1);
     if (this.frames.length === 0) {
       this.selectedIndex = null;
     } else {
       this.selectedIndex = Math.min(this.selectedIndex, this.frames.length - 1);
     }
-    this.renderStrip();
-    this.updateOnion();
-    this.updateButtons();
+    this.afterEdit();
   }
 
   public duplicateSelected(): void {
     if (this.selectedIndex === null) return;
+    this.recordHistory();
     const copy = this.frames[this.selectedIndex];
     const dup = { ...copy, id: `${copy.id}-dup-${Date.now()}` };
     this.frames.splice(this.selectedIndex + 1, 0, dup);
     this.selectedIndex += 1;
-    this.renderStrip();
-    this.updateOnion();
-    this.updateButtons();
+    this.afterEdit();
   }
 
   public moveSelected(delta: -1 | 1): void {
     if (this.selectedIndex === null) return;
     const target = this.selectedIndex + delta;
     if (target < 0 || target >= this.frames.length) return;
+    this.recordHistory();
     const [frame] = this.frames.splice(this.selectedIndex, 1);
     this.frames.splice(target, 0, frame);
     this.selectedIndex = target;
+    this.afterEdit();
+  }
+
+  public clearAll(): void {
+    if (this.frames.length === 0) return;
+    this.recordHistory();
+    this.frames = [];
+    this.selectedIndex = null;
+    this.afterEdit();
+  }
+
+  private recordHistory(): void {
+    this.undoStack.push({ frames: [...this.frames], selectedIndex: this.selectedIndex });
+    if (this.undoStack.length > HISTORY_LIMIT) this.undoStack.shift();
+    this.redoStack = [];
+  }
+
+  private undo(): void {
+    const entry = this.undoStack.pop();
+    if (!entry) return;
+    this.redoStack.push({ frames: [...this.frames], selectedIndex: this.selectedIndex });
+    this.frames = entry.frames;
+    this.selectedIndex = entry.selectedIndex;
+    this.afterEdit();
+  }
+
+  private redo(): void {
+    const entry = this.redoStack.pop();
+    if (!entry) return;
+    this.undoStack.push({ frames: [...this.frames], selectedIndex: this.selectedIndex });
+    this.frames = entry.frames;
+    this.selectedIndex = entry.selectedIndex;
+    this.afterEdit();
+  }
+
+  private afterEdit(): void {
     this.renderStrip();
     this.updateOnion();
+    this.updateAb();
     this.updateButtons();
   }
+
+  // --- Onion skin ---
 
   public toggleOnion(): void {
     this.setOnionEnabled(!this.onionEnabled);
@@ -163,34 +260,130 @@ export class StopMotionController {
     }
   }
 
-  /** Draws the selected (or last) frame as a semi-transparent ghost. */
+  /** Draws the last `ghostCount` frames ending at the reference frame, the
+   * newest ghost most opaque. */
   private updateOnion(): void {
     if (!this.onionEnabled) return;
-    const frame = this.selectedIndex !== null ? this.frames[this.selectedIndex] : this.frames[this.frames.length - 1];
-    if (!frame) {
+    const reference = this.selectedIndex !== null ? this.selectedIndex : this.frames.length - 1;
+    if (reference < 0) {
       this.onionCtx.clearRect(0, 0, this.elements.onionCanvas.width, this.elements.onionCanvas.height);
+      return;
+    }
+    const start = Math.max(0, reference - (this.ghostCount - 1));
+    const subset = this.frames.slice(start, reference + 1);
+
+    const images: HTMLImageElement[] = [];
+    let pending = subset.length;
+    if (pending === 0) return;
+    for (const frame of subset) {
+      const img = new Image();
+      img.onload = () => {
+        pending -= 1;
+        if (pending === 0 && this.onionEnabled) this.drawGhosts(images);
+      };
+      img.onerror = () => {
+        pending -= 1;
+      };
+      img.src = frame.dataUrl;
+      images.push(img);
+    }
+  }
+
+  private drawGhosts(images: HTMLImageElement[]): void {
+    const canvas = this.elements.onionCanvas;
+    this.onionCtx.clearRect(0, 0, canvas.width, canvas.height);
+    const n = images.length;
+    for (let i = 0; i < n; i++) {
+      this.onionCtx.globalAlpha = ONION_ALPHA * (0.4 + (0.6 * (i + 1)) / n);
+      this.onionCtx.drawImage(images[i], 0, 0, canvas.width, canvas.height);
+    }
+    this.onionCtx.globalAlpha = 1;
+  }
+
+  // --- Registration grid ---
+
+  private toggleGrid(force?: boolean): void {
+    this.gridEnabled = force ?? !this.gridEnabled;
+    this.elements.gridCanvas.classList.toggle('active', this.gridEnabled);
+    this.elements.btnGrid.classList.toggle('btn-primary', this.gridEnabled);
+    if (this.gridEnabled) this.drawGrid();
+    else this.gridCtx.clearRect(0, 0, this.elements.gridCanvas.width, this.elements.gridCanvas.height);
+  }
+
+  private drawGrid(): void {
+    const canvas = this.elements.gridCanvas;
+    const ctx = this.gridCtx;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    ctx.strokeStyle = 'rgba(88, 166, 255, 0.18)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let x = GRID_STEP; x < canvas.width; x += GRID_STEP) {
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, canvas.height);
+    }
+    for (let y = GRID_STEP; y < canvas.height; y += GRID_STEP) {
+      ctx.moveTo(0, y);
+      ctx.lineTo(canvas.width, y);
+    }
+    ctx.stroke();
+
+    const cx = canvas.width / 2;
+    const cy = canvas.height / 2;
+    ctx.strokeStyle = 'rgba(88, 166, 255, 0.45)';
+    ctx.beginPath();
+    ctx.moveTo(cx - 20, cy);
+    ctx.lineTo(cx + 20, cy);
+    ctx.moveTo(cx, cy - 20);
+    ctx.lineTo(cx, cy + 20);
+    ctx.stroke();
+  }
+
+  // --- A/B flip (live scene vs reference frame) ---
+
+  private toggleAb(): void {
+    if (this.abMode) {
+      this.clearAb();
+    } else {
+      this.abMode = true;
+      this.elements.btnAb.classList.add('btn-primary');
+      this.stopPlayback();
+      this.updateAb();
+    }
+    this.updateButtons();
+  }
+
+  private updateAb(): void {
+    if (!this.abMode) return;
+    const reference = this.selectedIndex !== null ? this.selectedIndex : this.frames.length - 1;
+    if (reference < 0) {
+      this.clearAb();
       return;
     }
     const img = new Image();
     img.onload = () => {
-      if (!this.onionEnabled) return;
-      this.onionCtx.clearRect(0, 0, this.elements.onionCanvas.width, this.elements.onionCanvas.height);
-      this.onionCtx.globalAlpha = ONION_ALPHA;
-      this.onionCtx.drawImage(
-        img,
-        0,
-        0,
-        this.elements.onionCanvas.width,
-        this.elements.onionCanvas.height
-      );
-      this.onionCtx.globalAlpha = 1;
+      if (!this.abMode) return;
+      const canvas = this.elements.playCanvas;
+      canvas.classList.add('active');
+      this.playCtx.clearRect(0, 0, canvas.width, canvas.height);
+      this.playCtx.drawImage(img, 0, 0, canvas.width, canvas.height);
     };
-    img.src = frame.dataUrl;
+    img.src = this.frames[reference].dataUrl;
   }
+
+  private clearAb(): void {
+    this.abMode = false;
+    this.elements.btnAb.classList.remove('btn-primary');
+    this.elements.playCanvas.classList.remove('active');
+    this.playCtx.clearRect(0, 0, this.elements.playCanvas.width, this.elements.playCanvas.height);
+  }
+
+  // --- Playback ---
 
   private async startPlayback(): Promise<void> {
     if (this.frames.length === 0) return;
     this.stopPlayback();
+    if (this.abMode) this.clearAb();
     this.playing = true;
     this.elements.btnPlay.textContent = 'Stop';
 
@@ -242,6 +435,8 @@ export class StopMotionController {
     this.elements.btnPlay.textContent = 'Přehrát';
   }
 
+  // --- Frame strip ---
+
   private renderStrip(): void {
     const strip = this.elements.strip;
     strip.textContent = '';
@@ -267,9 +462,11 @@ export class StopMotionController {
         this.selectedIndex = index;
         this.renderStrip();
         this.updateOnion();
+        this.updateAb();
         this.updateButtons();
       });
       strip.appendChild(thumb);
+      thumb.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     });
   }
 
@@ -278,11 +475,14 @@ export class StopMotionController {
   /**
    * Records the frames as a WebM/MP4 video at the selected fps by drawing each
    * frame to a canvas and pushing it into the MediaStream via requestFrame().
+   * When a Theremin audio node is provided (and enabled), its stream is mixed
+   * into the recording as the soundtrack.
    */
   private async exportWebM(): Promise<void> {
     if (this.exporting || this.frames.length === 0) return;
     this.setExporting(true);
     this.stopPlayback();
+    if (this.abMode) this.clearAb();
     try {
       const fps = parseInt(this.elements.fpsSelect.value, 10) || 24;
       const canvas = this.elements.playCanvas;
@@ -294,8 +494,19 @@ export class StopMotionController {
 
       const stream = canvasStream.captureStream(0);
       const track = stream.getVideoTracks()[0] as MediaStreamTrack & { requestFrame?: () => void };
+
+      // Mix in the Theremin soundtrack when active.
+      let combinedStream: MediaStream = stream;
+      const audioNode = this.elements.audioSource?.();
+      if (audioNode && audioNode.stream.getAudioTracks().length > 0) {
+        combinedStream = new MediaStream([
+          ...stream.getVideoTracks(),
+          ...audioNode.stream.getAudioTracks(),
+        ]);
+      }
+
       const mimeType = this.getSupportedMimeType();
-      const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 5000000 });
+      const recorder = new MediaRecorder(combinedStream, { mimeType, videoBitsPerSecond: 5000000 });
       const chunks: Blob[] = [];
       recorder.ondataavailable = (e) => {
         if (e.data && e.data.size > 0) chunks.push(e.data);
@@ -492,6 +703,9 @@ export class StopMotionController {
     this.elements.btnPlay.disabled = busy || count === 0;
     this.elements.btnLeft.disabled = busy || !hasSelection || this.selectedIndex === 0;
     this.elements.btnRight.disabled = busy || !hasSelection || this.selectedIndex === count - 1;
+    this.elements.btnUndo.disabled = busy || this.undoStack.length === 0;
+    this.elements.btnRedo.disabled = busy || this.redoStack.length === 0;
+    this.elements.btnClear.disabled = busy || count === 0;
     this.elements.btnExportWebm.disabled = busy || count === 0;
     this.elements.btnExportGif.disabled = busy || count === 0;
     this.elements.btnExportZip.disabled = busy || count === 0;

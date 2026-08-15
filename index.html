@@ -85,6 +85,9 @@
         <!-- Stop-Motion Playback Overlay (on top of the stage) -->
         <canvas id="sm-play-canvas" class="sm-play-canvas"></canvas>
 
+        <!-- Stop-Motion Registration Grid Overlay -->
+        <canvas id="sm-grid-canvas" class="sm-grid-canvas"></canvas>
+
         <!-- Status Banner -->
         <div id="status-banner" class="status-banner hidden"></div>
 
@@ -96,6 +99,9 @@
             <button id="sm-btn-duplicate" class="btn btn-secondary" title="Duplikovat vybraný snímek" disabled>Duplikovat</button>
             <button id="sm-btn-left" class="btn btn-secondary" title="Posunout snímek doleva" disabled>&larr;</button>
             <button id="sm-btn-right" class="btn btn-secondary" title="Posunout snímek doprava" disabled>&rarr;</button>
+            <button id="sm-btn-undo" class="btn btn-secondary" title="Zpět – vrátit poslední úpravu časové osy" disabled>Zpět</button>
+            <button id="sm-btn-redo" class="btn btn-secondary" title="Znovu – opakovat vrácenou úpravu" disabled>Znovu</button>
+            <button id="sm-btn-clear" class="btn btn-secondary" title="Smazat všechny snímky" disabled>Vše</button>
             <button id="sm-btn-play" class="btn btn-secondary" title="Přehrát snímky" disabled>Přehrát</button>
             <label class="compact-label" for="sm-fps">FPS</label>
             <select id="sm-fps" class="select-input">
@@ -103,6 +109,14 @@
               <option value="24" selected>24</option>
             </select>
             <button id="sm-btn-onion" class="btn btn-secondary" title="Zapnout/vypnout průsvitný duch předchozího snímku">Onion</button>
+            <label class="compact-label" for="sm-onion-ghosts">Duchů</label>
+            <select id="sm-onion-ghosts" class="select-input">
+              <option value="1" selected>1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+            </select>
+            <button id="sm-btn-grid" class="btn btn-secondary" title="Zapnout/vypnout registrační mřížku pro zarovnání snímků">Mřížka</button>
+            <button id="sm-btn-ab" class="btn btn-secondary" title="A/B flip – přepínat mezi živou scénou a vybraným snímkem">A/B</button>
             <span class="sm-separator"></span>
             <button id="sm-btn-export-webm" class="btn btn-secondary" title="Vyexportovat animaci jako WebM video" disabled>WebM</button>
             <button id="sm-btn-export-gif" class="btn btn-secondary" title="Vyexportovat animaci jako GIF" disabled>GIF</button>

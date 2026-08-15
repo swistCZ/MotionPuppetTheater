@@ -72,11 +72,15 @@
   * [x] Background reset (`Výchozí`) restores the default solid color.
 * **Phase 4 - Props / connected chains (DONE, leaves as first use-case):**
   * [x] Generic **chain prop** (`src/chainProp.ts`): N connected leaves attached to the tracked hand point. Verlet physics give gravity + inertia (secondary motion), each leaf flutters with a phase-shifted sine, and leaves come in varying sizes. `Listí` button toggles it in the stop-motion panel; the chain anchors to the left (or right) hand. Generalizable to ribbons, beads, branches (swap the generated leaf texture / tune `DEFAULT_CHAIN_CONFIG`).
-* **Additional ideas (deferred):**
-  * Registration marks / grid overlay for aligning frames on top of each other (position/scale consistency).
-  * **A/B flip** - quick toggle between the previous and current frame to spot small movements (stop-motion classic).
-  * Undo/redo for frame delete/reorder actions.
-  * **Theremin as the soundtrack of the exported video.**
+* **Additional ideas (all implemented in this pass):**
+  * [x] **Registration grid overlay** (`Mřížka`): light grid lines every 96px + center crosshair for aligning frames on top of each other (position/scale consistency).
+  * [x] **A/B flip** (`A/B`): toggles between the live scene and the selected frame to spot small movements (stop-motion classic).
+  * [x] **Undo/redo** (`Zpět`/`Znovu`) for all timeline edits (snap, delete, duplicate, reorder, clear) - snapshot history capped at 50 steps.
+  * [x] **Theremin as the soundtrack of the exported video**: when the Theremin is enabled, its `MediaStreamAudioDestinationNode` is mixed into the WebM/MP4 recording (recorded live during export).
+  * [x] **Configurable onion-skin ghosts** (`Duchů` 1-3): the last N frames ending at the reference frame, newest most opaque.
+  * [x] **Space bar = Snímek** shortcut (capture-phase keydown; ignored while exporting/playing).
+  * [x] **Clear all** (`Vše`) button to wipe the whole timeline.
+  * [x] Onion skin auto-enables when entering stop-motion mode.
 
 ## 4. Known Issues / Technical Debt / Blockers
 * Builder exports data-URL images (self-contained single file, slightly larger JSON) - fine for dev; swap for file paths in `config.json` if bundle size matters.

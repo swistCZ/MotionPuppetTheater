@@ -81,6 +81,7 @@ class AppManager {
         strip: document.getElementById('sm-frame-strip') as HTMLElement,
         onionCanvas: document.getElementById('sm-onion-canvas') as HTMLCanvasElement,
         playCanvas: document.getElementById('sm-play-canvas') as HTMLCanvasElement,
+        gridCanvas: document.getElementById('sm-grid-canvas') as HTMLCanvasElement,
         btnSnap: document.getElementById('sm-btn-snap') as HTMLButtonElement,
         btnDelete: document.getElementById('sm-btn-delete') as HTMLButtonElement,
         btnDuplicate: document.getElementById('sm-btn-duplicate') as HTMLButtonElement,
@@ -88,10 +89,17 @@ class AppManager {
         btnRight: document.getElementById('sm-btn-right') as HTMLButtonElement,
         btnPlay: document.getElementById('sm-btn-play') as HTMLButtonElement,
         btnOnion: document.getElementById('sm-btn-onion') as HTMLButtonElement,
+        btnGrid: document.getElementById('sm-btn-grid') as HTMLButtonElement,
+        btnAb: document.getElementById('sm-btn-ab') as HTMLButtonElement,
+        btnUndo: document.getElementById('sm-btn-undo') as HTMLButtonElement,
+        btnRedo: document.getElementById('sm-btn-redo') as HTMLButtonElement,
+        btnClear: document.getElementById('sm-btn-clear') as HTMLButtonElement,
         btnExportWebm: document.getElementById('sm-btn-export-webm') as HTMLButtonElement,
         btnExportGif: document.getElementById('sm-btn-export-gif') as HTMLButtonElement,
         btnExportZip: document.getElementById('sm-btn-export-zip') as HTMLButtonElement,
         fpsSelect: document.getElementById('sm-fps') as HTMLSelectElement,
+        ghostSelect: document.getElementById('sm-onion-ghosts') as HTMLSelectElement,
+        audioSource: () => this.theremin.getAudioStreamNode(),
         onStatus: (message: string) => {
           this.showStatus(message);
           setTimeout(() => this.hideStatus(), 3000);
