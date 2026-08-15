@@ -234,10 +234,28 @@ class AppManager {
       this.updateFps();
 
       // Theremin is driven from the render loop so it also works in simulator
-      // mode (handleTrackingResults early-returns while the sim is running).
+      // mode (handleTrackingResults early-returns while the sim is running) or
+      // directly via mouse when the camera is not running.
       if (this.theremin.isEnabled()) {
-        const leftState = this.renderer.getLastHandState('Left');
-        const rightState = this.renderer.getLastHandState('Right');
+        let leftState = this.renderer.getLastHandState('Left');
+        let rightState = this.renderer.getLastHandState('Right');
+
+        // If no camera tracking and no simulator is active, drive Theremin
+        // directly from the mouse pointer so clicking "Theremin" immediately works.
+        if (!leftState && !rightState) {
+          const ptr = this.simulator.getLastPointerPosition();
+          const stage = document.getElementById('pixi-viewport');
+          const w = stage?.clientWidth || 800;
+          const h = stage?.clientHeight || 600;
+          leftState = this.simulator.buildState('Left', performance.now() / 1000, ptr, w, h);
+          rightState = this.simulator.buildState(
+            'Right',
+            performance.now() / 1000,
+            { x: Math.min(w - 60, ptr.x + 240), y: ptr.y },
+            w,
+            h
+          );
+        }
 
         const leftY = leftState ? leftState.wristPosition.y : undefined;
         const rightY = rightState ? rightState.wristPosition.y : undefined;

@@ -1,5 +1,5 @@
 import { PuppetRenderer } from './renderer';
-import { HandState, LimbOffsets, Point2D, lerp } from './gestures';
+import { HandState, LimbOffsets, Point2D, clamp, lerp } from './gestures';
 
 /**
  * Drives the puppets with synthetic hand states so the app can be tested
@@ -14,26 +14,39 @@ export class HandSimulator {
   private startTime: number = performance.now();
   private mouseTarget: Point2D | null = null;
   private current: Point2D = { x: 0, y: 0 };
+  private lastPointer: Point2D = { x: 400, y: 300 };
 
   constructor(renderer: PuppetRenderer) {
     this.renderer = renderer;
-    window.addEventListener('pointermove', (e) => {
-      const stage = document.getElementById('pixi-viewport') as HTMLElement;
+    const onMove = (e: PointerEvent | MouseEvent) => {
+      const stage = document.getElementById('pixi-viewport');
+      if (!stage) return;
       const rect = stage.getBoundingClientRect();
-      this.mouseTarget = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-    });
+      const x = clamp(e.clientX - rect.left, 0, Math.max(1, rect.width));
+      const y = clamp(e.clientY - rect.top, 0, Math.max(1, rect.height));
+      this.mouseTarget = { x, y };
+      this.lastPointer = { x, y };
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('mousemove', onMove);
   }
 
   public isRunning(): boolean {
     return this.running;
   }
 
+  public getLastPointerPosition(): Point2D {
+    return { ...this.lastPointer };
+  }
+
   public start(): void {
     if (this.running) return;
     this.running = true;
     this.startTime = performance.now();
-    const stage = document.getElementById('pixi-viewport') as HTMLElement;
-    this.current = { x: (stage.clientWidth || 800) / 2, y: (stage.clientHeight || 600) / 2 };
+    const stage = document.getElementById('pixi-viewport');
+    const w = stage?.clientWidth || 800;
+    const h = stage?.clientHeight || 600;
+    this.current = this.mouseTarget ? { ...this.mouseTarget } : { x: w / 2, y: h / 2 };
     this.loop();
   }
 
@@ -53,26 +66,33 @@ export class HandSimulator {
 
   private update(): void {
     const t = (performance.now() - this.startTime) / 1000;
-    const stage = document.getElementById('pixi-viewport') as HTMLElement;
-    const w = stage.clientWidth || 800;
+    const stage = document.getElementById('pixi-viewport');
+    const w = stage?.clientWidth || 800;
+    const h = stage?.clientHeight || 600;
 
     // Body follows the mouse; when idle it simply stays where it is.
     if (this.mouseTarget) {
-      this.current.x = lerp(this.current.x, this.mouseTarget.x, 0.15);
-      this.current.y = lerp(this.current.y, this.mouseTarget.y, 0.15);
+      this.current.x = lerp(this.current.x, this.mouseTarget.x, 0.25);
+      this.current.y = lerp(this.current.y, this.mouseTarget.y, 0.25);
     }
 
-    const leftState = this.buildState('Left', t, this.current);
-    const rightState = this.buildState('Right', t, {
-      x: Math.min(w - 60, this.current.x + 280),
-      y: this.current.y,
-    });
+    const leftState = this.buildState('Left', t, this.current, w, h);
+    const rightState = this.buildState(
+      'Right',
+      t,
+      {
+        x: Math.min(w - 60, Math.max(60, this.current.x + 240)),
+        y: this.current.y,
+      },
+      w,
+      h
+    );
 
     this.renderer.updateHandState(leftState);
     this.renderer.updateHandState(rightState);
   }
 
-  private buildState(handType: 'Left' | 'Right', t: number, pos: Point2D): HandState {
+  public buildState(handType: 'Left' | 'Right', t: number, pos: Point2D, w = 800, h = 600): HandState {
     // Different phase per hand so the two puppets never move in lockstep.
     const phase = handType === 'Left' ? 0 : Math.PI * 0.7;
     const restAngle = Math.PI / 2;
@@ -96,9 +116,12 @@ export class HandSimulator {
       rightLeg: { x: 26 - kickR * 38, y: 55 + Math.abs(kickR) * 22 },
     };
 
+    const normX = clamp(pos.x / Math.max(1, w), 0, 1);
+    const normY = clamp(pos.y / Math.max(1, h), 0, 1);
+
     return {
       handType,
-      wristPosition: { x: pos.x / 1000, y: pos.y / 800 },
+      wristPosition: { x: normX, y: normY },
       rawPositionPixels: pos,
       smoothedPosition: pos,
       pinchDistance: 0.05,
