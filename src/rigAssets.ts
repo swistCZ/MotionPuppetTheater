@@ -73,6 +73,7 @@ export function removeLocalCharacter(id: string): void {
  */
 export async function loadPartCanvas(part: RigPartFile): Promise<HTMLCanvasElement> {
   const img = new Image();
+  img.crossOrigin = 'anonymous';
   img.src = part.src;
   await img.decode();
   const canvas = document.createElement('canvas');

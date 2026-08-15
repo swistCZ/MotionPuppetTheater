@@ -237,14 +237,21 @@ export class StopMotionController {
   }
 
   public snapFrame(): void {
-    this.recordHistory();
-    const dataUrl = this.captureCleanDataUrl();
-    const pose = this.elements.getPoseSnapshot?.();
-    const id = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}`;
-    this.frames.push({ id, dataUrl, pose });
-    this.selectedIndex = this.frames.length - 1;
-    this.afterEdit();
-    this.elements.onAfterSnap?.();
+    try {
+      this.recordHistory();
+      const dataUrl = this.captureCleanDataUrl();
+      const pose = this.elements.getPoseSnapshot?.();
+      const id = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}`;
+      this.frames.push({ id, dataUrl, pose });
+      this.selectedIndex = this.frames.length - 1;
+      this.afterEdit();
+      this.elements.onAfterSnap?.();
+      this.elements.onStatus?.(`Snímek ${this.frames.length} uložen.`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('Chyba při ukládání snímku:', err);
+      this.elements.onStatus?.(`Chyba snímku: ${msg}`);
+    }
   }
 
   /** Loads the pose snapshot from the selected frame back onto the live stage. */
