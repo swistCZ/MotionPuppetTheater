@@ -5,6 +5,7 @@ import { StagePoseSnapshot } from './renderer';
 export interface StopMotionFrame {
   id: string;
   dataUrl: string;
+  thumbUrl?: string;
   pose?: StagePoseSnapshot;
 }
 
@@ -54,7 +55,7 @@ export interface StopMotionElements {
   onAfterSnap?: () => void;
   audioSource?: () => MediaStreamAudioDestinationNode | undefined;
   /** Capture clean stage dataURL without handles. */
-  captureStageDataUrl?: () => string;
+  captureStageDataUrl?: () => { full: string; thumb: string };
   /** Hide/show stop-motion edit handles around a capture. */
   setHandlesVisible?: (visible: boolean) => void;
   /** Force a Pixi present so toDataURL sees the latest frame. */
@@ -224,25 +225,25 @@ export class StopMotionController {
 
   // --- Timeline edits (all record undo history) ---
 
-  private captureCleanDataUrl(): string {
+  private captureCleanDataUrl(): { full: string; thumb: string } {
     if (this.elements.captureStageDataUrl) {
       return this.elements.captureStageDataUrl();
     }
     this.elements.setHandlesVisible?.(false);
     const canvas = this.canvasSource();
     this.elements.renderNow?.();
-    const dataUrl = canvas.toDataURL('image/png');
+    const full = canvas.toDataURL('image/png');
     this.elements.setHandlesVisible?.(true);
-    return dataUrl;
+    return { full, thumb: full };
   }
 
   public snapFrame(): void {
     try {
       this.recordHistory();
-      const dataUrl = this.captureCleanDataUrl();
+      const { full: dataUrl, thumb: thumbUrl } = this.captureCleanDataUrl();
       const pose = this.elements.getPoseSnapshot?.();
       const id = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}`;
-      this.frames.push({ id, dataUrl, pose });
+      this.frames.push({ id, dataUrl, thumbUrl, pose });
       this.selectedIndex = this.frames.length - 1;
       this.afterEdit();
       this.elements.onAfterSnap?.();
@@ -270,10 +271,10 @@ export class StopMotionController {
   public updateSelectedFrame(): void {
     if (this.selectedIndex === null) return;
     this.recordHistory();
-    const dataUrl = this.captureCleanDataUrl();
+    const { full: dataUrl, thumb: thumbUrl } = this.captureCleanDataUrl();
     const pose = this.elements.getPoseSnapshot?.();
     const existing = this.frames[this.selectedIndex];
-    this.frames[this.selectedIndex] = { id: existing.id, dataUrl, pose };
+    this.frames[this.selectedIndex] = { id: existing.id, dataUrl, thumbUrl, pose };
     this.afterEdit();
     this.elements.onStatus?.(`Snímek ${this.selectedIndex + 1} byl přepsán aktuální scénou.`);
   }
@@ -643,7 +644,7 @@ export class StopMotionController {
       if (index === this.selectedIndex) thumb.classList.add('selected');
 
       const img = document.createElement('img');
-      img.src = frame.dataUrl;
+      img.src = frame.thumbUrl || frame.dataUrl;
       img.alt = `Snímek ${index + 1}`;
 
       const label = document.createElement('span');
