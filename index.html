@@ -89,8 +89,9 @@
         <!-- Stop-Motion Registration Grid Overlay -->
         <canvas id="sm-grid-canvas" class="sm-grid-canvas"></canvas>
 
-        <!-- Stop-Motion onboarding hint (visible until the first frame) -->
+        <!-- Stop-Motion onboarding hint (visible until the first frame or dismissed) -->
         <div id="sm-empty-hint" class="sm-empty-hint hidden">
+          <button id="sm-hint-close" class="sm-empty-hint-close" title="Zavřít nápovědu" aria-label="Zavřít">&times;</button>
           <p>Figurky sledují ruce (dlaň = pohyb, prsty = paže, nohy, hlava). V stop-motion se na figurce objeví <strong>modré a zelené kroužky</strong> – to jsou chytací body: modrý = posun celé figurky, zelené = hlava a končetiny.</p>
           <p>Pro jistotu, aby ruce nepřepisovaly tvoje nastavení, vypni <strong>Ruka</strong> – figurky pak zůstanou, kam je dáš myší.</p>
           <p>Pěst zamkne pózu, vztyčený prostředníček scénu přiblíží.</p>
@@ -99,11 +100,6 @@
 
         <!-- Status Banner -->
         <div id="status-banner" class="status-banner hidden"></div>
-
-        <!-- Temporary on-screen diagnostics (remove after the stage canvas is
-             verified visible). Shows the live stage canvas size/state so a
-             broken canvas layout can be reported without opening a console. -->
-        <div id="diag" style="position: fixed; top: 4px; right: 4px; z-index: 9999; background: rgba(0,0,0,0.85); color: #7ee787; font: 11px/1.45 ui-monospace, monospace; padding: 6px 9px; border: 1px solid #3a3f47; border-radius: 6px; pointer-events: none; white-space: pre;">diagnostika…</div>
 
         <!-- Stop-Motion Timeline Panel -->
         <section id="sm-panel" class="sm-panel hidden">

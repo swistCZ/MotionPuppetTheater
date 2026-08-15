@@ -52,8 +52,7 @@ class AppManager {
   private smStripOffsetY: number = 0;
   private smStripActive: boolean = false;
   private smEmptyHint: HTMLElement;
-  private lastDiagTime: number = 0;
-  private diagEl: HTMLElement;
+  private smHintDismissed: boolean = false;
   private advanceStripAfterSnap: () => void = () => {};
 
   // Real-time Display FPS Loop
@@ -75,7 +74,6 @@ class AppManager {
     this.fpsBadge = document.getElementById('fps-badge') as HTMLElement;
     this.recBadge = document.getElementById('rec-badge') as HTMLElement;
     this.smEmptyHint = document.getElementById('sm-empty-hint') as HTMLElement;
-    this.diagEl = document.getElementById('diag') as HTMLElement;
 
     const stageContainer = document.getElementById('pixi-viewport') as HTMLElement;
     const width = stageContainer.clientWidth || window.innerWidth;
@@ -235,12 +233,6 @@ class AppManager {
     const loop = () => {
       this.updateFps();
 
-      const now = performance.now();
-      if (now - this.lastDiagTime > 250) {
-        this.lastDiagTime = now;
-        this.updateDiag();
-      }
-
       // Theremin is driven from the render loop so it also works in simulator
       // mode (handleTrackingResults early-returns while the sim is running).
       if (this.theremin.isEnabled()) {
@@ -292,33 +284,14 @@ class AppManager {
       }
       this.renderer.setZoomTarget(zoomTarget);
 
-      // Guide the user until the first frame exists: explain how to pose and
-      // that Snímek (or Space) captures the frame.
-      const wantHint = this.stopMotionActive && this.stopMotion.getFrameCount() === 0;
+      // Guide the user until the first frame exists (or until dismissed):
+      // explain how to pose and that Snímek (or Space) captures the frame.
+      const wantHint = this.stopMotionActive && !this.smHintDismissed && this.stopMotion.getFrameCount() === 0;
       this.smEmptyHint.classList.toggle('hidden', !wantHint);
 
       requestAnimationFrame(loop);
     };
     requestAnimationFrame(loop);
-  }
-
-  /** Updates the on-screen diagnostics panel (temporary helper used to report
-   * the live stage-canvas state without a browser console). */
-  private updateDiag(): void {
-    const canvas = this.renderer.getCanvasElement();
-    const onion = document.getElementById('sm-onion-canvas') as HTMLCanvasElement;
-    const vp = document.getElementById('pixi-viewport') as HTMLElement;
-    const cs = getComputedStyle(canvas);
-    const rect = canvas.getBoundingClientRect();
-    this.diagEl.textContent =
-      `scena canvas\n` +
-      ` buffer ${canvas.width}x${canvas.height}\n` +
-      ` style  ${canvas.style.width} x ${canvas.style.height}\n` +
-      ` size   ${canvas.offsetWidth}x${canvas.offsetHeight}\n` +
-      ` rect   ${Math.round(rect.x)},${Math.round(rect.y)} ${Math.round(rect.width)}x${Math.round(rect.height)}\n` +
-      ` disp ${cs.display} op ${cs.opacity} vis ${cs.visibility} pos ${cs.position} z ${cs.zIndex}\n` +
-      ` viewport ${vp.clientWidth}x${vp.clientHeight}\n` +
-      ` onion display ${getComputedStyle(onion).display} (z ${getComputedStyle(onion).zIndex})`;
   }
 
   private setupUIControls(): void {
@@ -501,6 +474,7 @@ class AppManager {
       this.renderer.setPoseEditing(this.stopMotionActive);
 
       if (this.stopMotionActive) {
+        this.smHintDismissed = false;
         btnStopMotion.textContent = 'Stop-motion (ZAP)';
         btnStopMotion.classList.remove('btn-secondary');
         btnStopMotion.classList.add('btn-primary');
@@ -645,6 +619,13 @@ class AppManager {
       smBtnLeaves.classList.toggle('btn-primary', active);
       this.showStatus(!active ? 'Řetěz listí zapnut — sleduje ruku.' : 'Řetěz listí vypnut.');
       setTimeout(() => this.hideStatus(), 2000);
+    });
+
+    // Stop-Motion onboarding hint close button.
+    const smHintClose = document.getElementById('sm-hint-close') as HTMLButtonElement | null;
+    smHintClose?.addEventListener('click', () => {
+      this.smHintDismissed = true;
+      this.smEmptyHint.classList.add('hidden');
     });
 
     // Toggle hand-following (manual placement mode for precise arrangement).
