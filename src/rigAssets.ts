@@ -1,4 +1,4 @@
-import { Texture, Sprite, Container } from 'pixi.js';
+import { Texture, Sprite, Container, Rectangle } from 'pixi.js';
 import { CutoutRigConfig, RigPartFile } from './rig';
 
 export interface RigRenderParts {
@@ -129,10 +129,66 @@ export function removeBackgroundPixels(canvas: HTMLCanvasElement, tolerance: num
 }
 
 /**
+ * Computes a hit area matching the sprite's opaque pixels (plus a margin), so
+ * dragging/clicking only reacts on the visible part image instead of the whole
+ * (often transparent-padded) texture. Falls back to the full bounds when the
+ * pixels cannot be read.
+ */
+export function computeOpaqueBounds(texture: Texture, margin = 6): Rectangle {
+  const w = texture.width;
+  const h = texture.height;
+  if (w <= 0 || h <= 0) return new Rectangle(0, 0, w, h);
+
+  const resource = texture.source.resource;
+  let canvas: HTMLCanvasElement | null = null;
+  if (resource instanceof HTMLCanvasElement) {
+    canvas = resource;
+  } else if (resource instanceof HTMLImageElement) {
+    canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const drawCtx = canvas.getContext('2d');
+    if (drawCtx) drawCtx.drawImage(resource, 0, 0);
+  }
+  if (!canvas) return new Rectangle(0, 0, w, h);
+
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) return new Rectangle(0, 0, w, h);
+
+  let data: Uint8ClampedArray;
+  try {
+    data = ctx.getImageData(0, 0, w, h).data;
+  } catch {
+    return new Rectangle(0, 0, w, h);
+  }
+
+  let minX = w;
+  let minY = h;
+  let maxX = -1;
+  let maxY = -1;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (data[(y * w + x) * 4 + 3] > 8) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+  if (maxX < 0) return new Rectangle(0, 0, w, h);
+
+  const x0 = Math.max(0, minX - margin);
+  const y0 = Math.max(0, minY - margin);
+  return new Rectangle(x0, y0, Math.min(w, maxX + 1 + margin) - x0, Math.min(h, maxY + 1 + margin) - y0);
+}
+
+/**
  * Builds the sprite hierarchy for a cut-out rig. The puppet container (which
  * owns these parts) is expected to be positioned at the smoothed palm point.
  * The body sprite is anchored center; arms/legs are anchored at their joint
- * pivot and rotated per-frame; the head is anchored center and bobs.
+ * pivot and rotated per-frame; the head is anchored center and bobs. Every
+ * sprite gets a trimmed hit area so only its visible pixels are draggable.
  */
 export async function buildRigParts(config: CutoutRigConfig): Promise<RigRenderParts> {
   const bodyTexture = await loadPartTexture(config.parts.body);
@@ -141,14 +197,17 @@ export async function buildRigParts(config: CutoutRigConfig): Promise<RigRenderP
 
   const bodySprite = new Sprite(bodyTexture);
   bodySprite.anchor.set(0.5, 0.5);
+  bodySprite.hitArea = computeOpaqueBounds(bodyTexture);
 
   const leftArmSprite = new Sprite(leftTexture);
   leftArmSprite.anchor.set(config.leftArm.pivot.x / leftTexture.width, config.leftArm.pivot.y / leftTexture.height);
   leftArmSprite.rotation = config.leftArm.restHandAngle;
+  leftArmSprite.hitArea = computeOpaqueBounds(leftTexture);
 
   const rightArmSprite = new Sprite(rightTexture);
   rightArmSprite.anchor.set(config.rightArm.pivot.x / rightTexture.width, config.rightArm.pivot.y / rightTexture.height);
   rightArmSprite.rotation = config.rightArm.restHandAngle;
+  rightArmSprite.hitArea = computeOpaqueBounds(rightTexture);
 
   const leftArmContainer = new Container();
   leftArmContainer.addChild(leftArmSprite);
@@ -161,6 +220,7 @@ export async function buildRigParts(config: CutoutRigConfig): Promise<RigRenderP
     const headTexture = await loadPartTexture(config.parts.head);
     headSprite = new Sprite(headTexture);
     headSprite.anchor.set(0.5, 0.5);
+    headSprite.hitArea = computeOpaqueBounds(headTexture);
     headContainer = new Container();
     headContainer.addChild(headSprite);
   }
@@ -172,6 +232,7 @@ export async function buildRigParts(config: CutoutRigConfig): Promise<RigRenderP
     leftLegSprite = new Sprite(legTexture);
     leftLegSprite.anchor.set(config.leftLeg.pivot.x / legTexture.width, config.leftLeg.pivot.y / legTexture.height);
     leftLegSprite.rotation = config.leftLeg.restAngle;
+    leftLegSprite.hitArea = computeOpaqueBounds(legTexture);
     leftLegContainer = new Container();
     leftLegContainer.addChild(leftLegSprite);
   }
@@ -183,6 +244,7 @@ export async function buildRigParts(config: CutoutRigConfig): Promise<RigRenderP
     rightLegSprite = new Sprite(legTexture);
     rightLegSprite.anchor.set(config.rightLeg.pivot.x / legTexture.width, config.rightLeg.pivot.y / legTexture.height);
     rightLegSprite.rotation = config.rightLeg.restAngle;
+    rightLegSprite.hitArea = computeOpaqueBounds(legTexture);
     rightLegContainer = new Container();
     rightLegContainer.addChild(rightLegSprite);
   }

@@ -504,9 +504,36 @@ export class PuppetRenderer {
     }
 
     if (!drag.sprite) return;
-    const angle = Math.atan2(e.global.y - drag.jointGlobal.y, e.global.x - drag.jointGlobal.x);
-    const angle0 = Math.atan2(drag.startPointer.y - drag.jointGlobal.y, drag.startPointer.x - drag.jointGlobal.x);
-    drag.sprite.rotation = drag.startRotation + (angle - angle0);
+    const puppet = drag.puppet;
+    const rig = puppet.rig;
+    if (!rig) return;
+
+    // Cut-out rig: mouse dragging poses a limb the same way the live hand
+    // does - the hand/foot follows the cursor around its joint (shoulder/hip),
+    // and the head follows the cursor. This is far less surprising than
+    // rotating the sprite around an invisible pivot.
+    const { config, parts } = rig;
+    if (drag.part === 'head') {
+      if (parts.headContainer) {
+        const headPos = puppet.container.toLocal({ x: e.global.x, y: e.global.y });
+        parts.headContainer.position.set(headPos.x, headPos.y);
+      }
+      return;
+    }
+
+    const parent = drag.sprite.parent as Container;
+    const local = parent.toLocal({ x: e.global.x, y: e.global.y });
+    // Leg sprites hang straight down at rotation 0 (restAngle is an offset),
+    // so their "pointing direction" is restAngle + 90 deg in atan2 terms.
+    const rest =
+      drag.part === 'leftArm'
+        ? config.leftArm.restHandAngle
+        : drag.part === 'rightArm'
+          ? config.rightArm.restHandAngle
+          : drag.part === 'leftLeg'
+            ? (config.leftLeg?.restAngle ?? 0) + Math.PI / 2
+            : (config.rightLeg?.restAngle ?? 0) + Math.PI / 2;
+    drag.sprite.rotation = armRotation(local, rest, rig.maxArmDelta);
   };
 
   private onStagePointerUp = (): void => {
