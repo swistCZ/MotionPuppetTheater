@@ -103,72 +103,97 @@
 
         <!-- Stop-Motion Timeline Panel -->
         <section id="sm-panel" class="sm-panel hidden">
-          <div class="sm-controls">
-            <button id="sm-btn-snap" class="btn btn-danger" title="Uložit aktuální scénu jako nový snímek">Snímek</button>
-            <button id="sm-btn-load-pose" class="btn btn-secondary" title="Aktivovat a načíst pózu i pozadí vybraného snímku na scénu" disabled>Načíst pózu</button>
-            <button id="sm-btn-update-frame" class="btn btn-secondary" title="Přepsat vybraný snímek aktuální scénou (aktualizuje náhled i pózu)" disabled>Přepsat</button>
-            <button id="sm-btn-delete" class="btn btn-secondary" title="Smazat vybraný snímek" disabled>Smazat</button>
-            <button id="sm-btn-duplicate" class="btn btn-secondary" title="Duplikovat vybraný snímek" disabled>Duplikovat</button>
-            <button id="sm-btn-left" class="btn btn-secondary" title="Posunout snímek doleva" disabled>&larr;</button>
-            <button id="sm-btn-right" class="btn btn-secondary" title="Posunout snímek doprava" disabled>&rarr;</button>
-            <button id="sm-btn-undo" class="btn btn-secondary" title="Vrátit poslední úpravu časové osy (Ctrl+Z)" disabled>Zpět</button>
-            <button id="sm-btn-redo" class="btn btn-secondary" title="Obnovit vrácenou úpravu (Ctrl+Y)" disabled>Vpřed</button>
-            <button id="sm-btn-clear" class="btn btn-secondary" title="Smazat VŠECHNY snímky z časové osy" disabled>Smazat vše</button>
-            <button id="sm-btn-play" class="btn btn-secondary" title="Přehrát snímky" disabled>Přehrát</button>
-            <button id="sm-btn-loop" class="btn btn-secondary btn-primary" title="Přehrávat ve smyčce">Smyčka</button>
-            <button id="sm-btn-reverse" class="btn btn-secondary" title="Přehrávat snímky pozpátku (od posledního k prvnímu)">Pozpátku</button>
-            <label class="compact-label" for="sm-fps">FPS</label>
-            <select id="sm-fps" class="select-input">
-              <option value="12">12</option>
-              <option value="24" selected>24</option>
-            </select>
-            <button id="sm-btn-hand" class="btn btn-secondary btn-primary" title="Ruce sledují a ovládají loutky. Vypni pro přesné ruční umístění – loutky pak táhneš myší a ony zůstanou, kam je dáš.">Ruka (ZAP)</button>
-            <button id="sm-btn-onion" class="btn btn-secondary" title="Zapnout/vypnout průsvitný duch předchozího snímku">Onion</button>
-            <label class="compact-label" for="sm-onion-ghosts">Duchů</label>
-            <select id="sm-onion-ghosts" class="select-input">
-              <option value="1" selected>1</option>
-              <option value="2">2</option>
-              <option value="3">3</option>
-            </select>
-            <button id="sm-btn-grid" class="btn btn-secondary" title="Zapnout/vypnout registrační mřížku pro zarovnání snímků">Mřížka</button>
-            <button id="sm-btn-ab" class="btn btn-secondary" title="A/B flip – přepínat mezi živou scénou a vybraným snímkem">A/B</button>
+          <!-- Row 1: Capture, Timeline Editing, Playback & Assistance -->
+          <div class="sm-controls sm-row-primary">
+            <div class="sm-group">
+              <button id="sm-btn-snap" class="btn btn-danger" title="Uložit aktuální scénu jako nový snímek (Mezerník)">Snímek</button>
+              <button id="sm-btn-load-pose" class="btn btn-secondary" title="Aktivovat a načíst pózu i pozadí vybraného snímku na scénu k úpravám" disabled>Načíst pózu</button>
+              <button id="sm-btn-update-frame" class="btn btn-secondary" title="Přepsat vybraný snímek aktuální scénou (přeuloží obrázek i pózu)" disabled>Přepsat</button>
+              <button id="sm-btn-delete" class="btn btn-secondary" title="Smazat vybraný snímek" disabled>Smazat</button>
+              <button id="sm-btn-duplicate" class="btn btn-secondary" title="Duplikovat vybraný snímek" disabled>Duplikovat</button>
+              <button id="sm-btn-left" class="btn btn-secondary" title="Posunout snímek doleva" disabled>&larr;</button>
+              <button id="sm-btn-right" class="btn btn-secondary" title="Posunout snímek doprava" disabled>&rarr;</button>
+              <button id="sm-btn-undo" class="btn btn-secondary" title="Vrátit poslední úpravu časové osy (Ctrl+Z)" disabled>Zpět</button>
+              <button id="sm-btn-redo" class="btn btn-secondary" title="Obnovit vrácenou úpravu (Ctrl+Y)" disabled>Vpřed</button>
+              <button id="sm-btn-clear" class="btn btn-secondary" title="Smazat VŠECHNY snímky z časové osy" disabled>Smazat vše</button>
+            </div>
+
             <span class="sm-separator"></span>
-            <button id="sm-btn-export-webm" class="btn btn-secondary" title="Vyexportovat animaci jako WebM video" disabled>WebM</button>
-            <button id="sm-btn-export-gif" class="btn btn-secondary" title="Vyexportovat animaci jako GIF" disabled>GIF</button>
-            <button id="sm-btn-export-zip" class="btn btn-secondary" title="Stáhnout snímky jako PNG v ZIP archivu" disabled>PNG (ZIP)</button>
+
+            <div class="sm-group">
+              <button id="sm-btn-play" class="btn btn-secondary" title="Přehrát snímky" disabled>Přehrát</button>
+              <button id="sm-btn-loop" class="btn btn-secondary btn-primary" title="Přehrávat ve smyčce">Smyčka</button>
+              <button id="sm-btn-reverse" class="btn btn-secondary" title="Přehrávat snímky pozpátku (od posledního k prvnímu)">Pozpátku</button>
+              <label class="compact-label" for="sm-fps">FPS</label>
+              <select id="sm-fps" class="select-input">
+                <option value="12">12</option>
+                <option value="24" selected>24</option>
+              </select>
+            </div>
+
             <span class="sm-separator"></span>
-            <button id="sm-btn-save-project" class="btn btn-secondary" title="Uložit celý projekt animace (.mpt) na disk pro pozdější pokračování" disabled>Uložit projekt</button>
-            <label class="file-upload-btn btn-secondary" title="Otevřít dříve uložený projekt (.mpt / .json) z disku">
-              Otevřít projekt
-              <input type="file" id="sm-upload-project" accept=".mpt,.json" />
-            </label>
+
+            <div class="sm-group">
+              <button id="sm-btn-hand" class="btn btn-secondary btn-primary" title="Ruce sledují a ovládají loutky. Vypni pro přesné ruční umístění – loutky pak táhneš myší a ony zůstanou, kam je dáš.">Ruka (ZAP)</button>
+              <button id="sm-btn-onion" class="btn btn-secondary" title="Zapnout/vypnout průsvitný duch předchozího snímku">Onion</button>
+              <label class="compact-label" for="sm-onion-ghosts">Duchů</label>
+              <select id="sm-onion-ghosts" class="select-input">
+                <option value="1" selected>1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+              </select>
+              <button id="sm-btn-grid" class="btn btn-secondary" title="Zapnout/vypnout registrační mřížku pro zarovnání snímků">Mřížka</button>
+              <button id="sm-btn-ab" class="btn btn-secondary" title="A/B flip – přepínat mezi živou scénou a vybraným snímkem">A/B</button>
+            </div>
           </div>
-          <div class="sm-controls">
-            <label class="compact-label">Pozadí:</label>
-            <button id="sm-btn-green" class="btn btn-secondary" title="Vyplnit scénu klíčovací zelenou (chroma)">Zelená</button>
-            <label class="compact-label" for="sm-bg-color">Barva:</label>
-            <input type="color" id="sm-bg-color" class="sm-bg-color-input" value="#00b140" title="Zvolit vlastní barvu pozadí" />
-            <label class="file-upload-btn btn-secondary" title="Nahrát vzdálený (pozadí) pruh – posouvá se posuvníkem / krokem na snímek">
-              Pruh
-              <input type="file" id="sm-upload-strip" accept="image/*" />
-            </label>
-            <label class="file-upload-btn btn-secondary" title="Nahrát blízký (popředí) pruh – posouvá se rychleji díky paralaxe">
-              Pruh 2
-              <input type="file" id="sm-upload-strip-near" accept="image/*" />
-            </label>
-            <button id="sm-btn-reset-bg" class="btn btn-secondary" title="Vrátit výchozí pozadí">Výchozí</button>
-            <label class="compact-label" for="sm-pan-x">X:</label>
-            <input type="range" id="sm-pan-x" class="sm-pan-slider" min="0" max="4000" value="0" title="Vodorovný posun okna pruhu (X)" disabled />
-            <label class="compact-label" for="sm-pan-y">Y:</label>
-            <input type="range" id="sm-pan-y" class="sm-pan-slider" min="0" max="4000" value="0" title="Svislý posun okna pruhu (Y) – pro velké pozadí 3×3 a podobně" disabled />
-            <label class="compact-label" for="sm-pan-step-x">Krok X:</label>
-            <input type="number" id="sm-pan-step-x" class="sm-pan-step" value="0" min="0" step="1" title="Auto-posuv X v px po každém snímku" />
-            <label class="compact-label" for="sm-pan-step-y">Krok Y:</label>
-            <input type="number" id="sm-pan-step-y" class="sm-pan-step" value="0" min="0" step="1" title="Auto-posuv Y v px po každém snímku" />
-            <label class="compact-label" for="sm-parallax">Paralaxa:</label>
-            <input type="number" id="sm-parallax" class="sm-pan-step" value="1.6" min="1" step="0.1" title="Kolikrát rychleji se posouvá blízký pruh (Pruh 2)" />
+
+          <!-- Row 2: Background, Props, Project & Export -->
+          <div class="sm-controls sm-row-secondary">
+            <div class="sm-group">
+              <label class="compact-label">Pozadí:</label>
+              <button id="sm-btn-green" class="btn btn-secondary" title="Vyplnit scénu klíčovací zelenou (chroma)">Zelená</button>
+              <label class="compact-label" for="sm-bg-color">Barva:</label>
+              <input type="color" id="sm-bg-color" class="sm-bg-color-input" value="#00b140" title="Zvolit vlastní barvu pozadí" />
+              <label class="file-upload-btn btn-secondary" title="Nahrát vzdálený (pozadí) pruh – posouvá se posuvníkem / krokem na snímek">
+                Pruh
+                <input type="file" id="sm-upload-strip" accept="image/*" />
+              </label>
+              <label class="file-upload-btn btn-secondary" title="Nahrát blízký (popředí) pruh – posouvá se rychleji díky paralaxe">
+                Pruh 2
+                <input type="file" id="sm-upload-strip-near" accept="image/*" />
+              </label>
+              <button id="sm-btn-reset-bg" class="btn btn-secondary" title="Vrátit výchozí pozadí">Výchozí</button>
+              <label class="compact-label" for="sm-pan-x">X:</label>
+              <input type="range" id="sm-pan-x" class="sm-pan-slider" min="0" max="4000" value="0" title="Vodorovný posun okna pruhu (X)" disabled />
+              <label class="compact-label" for="sm-pan-y">Y:</label>
+              <input type="range" id="sm-pan-y" class="sm-pan-slider" min="0" max="4000" value="0" title="Svislý posun okna pruhu (Y) – pro velké pozadí 3×3 a podobně" disabled />
+              <label class="compact-label" for="sm-pan-step-x">Krok X:</label>
+              <input type="number" id="sm-pan-step-x" class="sm-pan-step" value="0" min="0" step="1" title="Auto-posuv X v px po každém snímku" />
+              <label class="compact-label" for="sm-pan-step-y">Krok Y:</label>
+              <input type="number" id="sm-pan-step-y" class="sm-pan-step" value="0" min="0" step="1" title="Auto-posuv Y v px po každém snímku" />
+              <label class="compact-label" for="sm-parallax">Paralaxa:</label>
+              <input type="number" id="sm-parallax" class="sm-pan-step" value="1.6" min="1" step="0.1" title="Kolikrát rychleji se posouvá blízký pruh (Pruh 2)" />
+              <button id="sm-btn-leaves" class="btn btn-secondary" title="Zapnout/vypnout řetěz listí sledující ruku (prop)">Listí</button>
+            </div>
+
             <span class="sm-separator"></span>
-            <button id="sm-btn-leaves" class="btn btn-secondary" title="Zapnout/vypnout řetěz listí sledující ruku (prop)">Listí</button>
+
+            <div class="sm-group">
+              <button id="sm-btn-save-project" class="btn btn-secondary" title="Uložit celý projekt animace (.mpt) na disk pro pozdější pokračování" disabled>Uložit projekt</button>
+              <label class="file-upload-btn btn-secondary" title="Otevřít dříve uložený projekt (.mpt / .json) z disku">
+                Otevřít projekt
+                <input type="file" id="sm-upload-project" accept=".mpt,.json" />
+              </label>
+            </div>
+
+            <span class="sm-separator"></span>
+
+            <div class="sm-group">
+              <label class="compact-label">Export:</label>
+              <button id="sm-btn-export-webm" class="btn btn-secondary" title="Vyexportovat animaci jako WebM video" disabled>WebM</button>
+              <button id="sm-btn-export-gif" class="btn btn-secondary" title="Vyexportovat animaci jako GIF" disabled>GIF</button>
+              <button id="sm-btn-export-zip" class="btn btn-secondary" title="Stáhnout snímky jako PNG v ZIP archivu" disabled>PNG (ZIP)</button>
+            </div>
           </div>
           <div class="sm-strip-bar">
             <button type="button" id="sm-strip-prev" class="btn btn-secondary sm-strip-nav" title="Předchozí snímky" disabled>&lsaquo;</button>

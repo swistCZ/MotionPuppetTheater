@@ -325,14 +325,29 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 2px;
+}
+
+.sm-controls::-webkit-scrollbar {
+  display: none;
+}
+
+.sm-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 .sm-separator {
   width: 1px;
-  align-self: stretch;
+  height: 24px;
   background: var(--panel-border);
   margin: 0 4px;
+  flex-shrink: 0;
 }
 
 .sm-strip-bar {

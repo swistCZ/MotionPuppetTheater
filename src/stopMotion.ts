@@ -634,7 +634,6 @@ export class StopMotionController {
       const img = document.createElement('img');
       img.src = frame.dataUrl;
       img.alt = `Snímek ${index + 1}`;
-      img.loading = 'lazy';
 
       const label = document.createElement('span');
       label.className = 'sm-frame-index';
