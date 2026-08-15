@@ -155,7 +155,32 @@ export class PuppetRenderer {
 
     const pixiCanvas = this.app.canvas as HTMLCanvasElement;
     pixiCanvas.classList.add('pixi-canvas');
+    // Pin the stage canvas to the viewport with inline styles so no CSS rule,
+    // cascade order or layout context can push it out of view (this matches
+    // how the overlay canvases already render). The onion/play/grid overlays
+    // stack above it via their own higher z-index.
+    pixiCanvas.style.position = 'absolute';
+    pixiCanvas.style.top = '0';
+    pixiCanvas.style.left = '0';
+    pixiCanvas.style.zIndex = '1';
     parentElement.appendChild(pixiCanvas);
+
+    // Report rendering state once so a broken canvas layout can be diagnosed
+    // from the console (a fully working app logs a sized, visible canvas).
+    console.info(
+      '[mpt] stage canvas:',
+      pixiCanvas.width,
+      'x',
+      pixiCanvas.height,
+      'buffer |',
+      pixiCanvas.style.width,
+      'x',
+      pixiCanvas.style.height,
+      'style | display:',
+      getComputedStyle(pixiCanvas).display,
+      '| rect:',
+      JSON.stringify(pixiCanvas.getBoundingClientRect())
+    );
 
     // Add background graphics
     this.app.stage.addChild(this.bgGraphics);

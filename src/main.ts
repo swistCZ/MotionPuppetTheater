@@ -125,6 +125,8 @@ class AppManager {
     await this.renderer.initialize(stageContainer);
 
     this.resizeCanvas();
+    const stage = document.getElementById('pixi-viewport') as HTMLElement;
+    this.renderer.resize(stage.clientWidth || window.innerWidth, stage.clientHeight || window.innerHeight);
     this.resizeStopMotionOverlays();
     window.addEventListener('resize', () => this.onWindowResize());
 

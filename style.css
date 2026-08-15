@@ -232,16 +232,18 @@ body {
   position: relative;
 }
 
-/* Only the Pixi stage canvas gets the block/relative treatment. Scoping the
+/* Only the Pixi stage canvas gets the absolute, pinned treatment. Scoping the
    selector to .pixi-canvas keeps the overlay canvases (onion/play/grid) on
-   their own absolute, z-indexed layers - a blanket `#pixi-viewport canvas`
-   rule would force them into normal flow, push the stage canvas out of the
-   visible area and leave a black stage. */
+   their own z-indexed layers - a blanket `#pixi-viewport canvas` rule would
+   force them into normal flow, push the stage canvas out of the visible area
+   and leave a black stage. Absolute positioning matches the overlay canvases
+   which demonstrably render. */
 #pixi-viewport canvas.pixi-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
   width: 100%;
   height: 100%;
-  display: block;
-  position: relative;
   z-index: 1;
 }
 
