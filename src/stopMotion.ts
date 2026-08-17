@@ -651,6 +651,9 @@ export class StopMotionController {
       label.className = 'sm-frame-index';
       label.textContent = String(index + 1);
 
+      thumb.appendChild(img);
+      thumb.appendChild(label);
+
       thumb.draggable = true;
       thumb.addEventListener('dragstart', (e) => {
         this.draggedFrameIndex = index;
