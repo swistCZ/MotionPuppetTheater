@@ -1161,15 +1161,19 @@ export class PuppetRenderer {
 
     if (!puppet.container) return;
 
+    // Always keep the latest hand state so gesture detection (clenched-fist
+    // freeze release, middle-finger zoom) keeps receiving fresh data even while
+    // the puppet pose is frozen or Ruka is switched off. Otherwise the display
+    // loop would read a stale fist state forever and never unfreeze.
+    if (isLeft) this.lastLeftState = state;
+    else this.lastRightState = state;
+
     // force=true is used for synthetic resting poses (stop-motion entry /
     // puppet rebuild) so the puppet still poses when Ruka is off.
     if (!force && (this.isFrozen || !this.handFollowEnabled)) return;
 
     // A live mouse drag on this puppet must win over the hand frame.
     if (this.activeDrag && this.activeDrag.puppet === puppet) return;
-
-    if (isLeft) this.lastLeftState = state;
-    else this.lastRightState = state;
 
     // Empty slot: keep hand tracking for other features but don't move a puppet.
     if (puppet.preset === 'none') return;
