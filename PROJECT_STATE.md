@@ -113,6 +113,13 @@
   * *Příznak:* Ve stop-motion se zapnutým ovládáním rukou (Ruka ZAP) figurky po zavření pěsti přestaly reagovat úplně – ani po otevření ruky se póza neodemkla.
   * *Skutečná příčina:* `updateHandState` při `isFrozen` vracel *před* uložením `lastLeftState`/`lastRightState`. Display loop četl fistFactor ze zastaralého stavu (pěst), takže `fistHeld` zůstal `true` a freeze se nikdy neuvolnil – pozice se neaktualizovala navždy.
   * *Oprava:* `updateHandState` (`renderer.ts`) ukládá `lastLeftState`/`lastRightState` vždy (gesta pěsti/zoomu tak dostávají čerstvá data i při zamrznutí či vypnuté Ruka), jen pohyb loutky zůstává gated. Ověřeno headless Chromium: pěst → freeze, otevření → odemčení a loutka opět sleduje ruku; build + 29 testů zelených.
+* **Limp limbs that barely move (RESOLVED):**
+  * *Příznak:* Po přepsání končetin na lokální rámec ruky loutky reagovaly přirozeně, ale paže/nohy skoro neměnily dosah – otevřená dlaň dala pažím jen ~20-40 px. Důvod: samotná *across* složka prstů je v normalizovaných jednotkách malá (0.05-0.18) a násobení `scale*1.1` z něj dělalo malý vektor; bez konstantní báze paže „visely" u ramene.
+  * *Oprava:* V `processHandLandmarks` (`gestures.ts`) je k splay-poháněnému rozpětí (`armSpan=scale*1.7`, `legSpan=scale*1.15`) přidána konstantní báze dosahu (`armBase=45`, `legBase=16`) – paže vždy viditelně čouhají a při rozevření dlaně dosah vzroste cca 3× (pěst ~52 px → široká dlaň ~155 px po `spreadFactor`). Rozsah zůstává nezávislý na vzdálenosti ruky (variace ≈ 51×(across/palmWidth)). Ověřeno: paže na otevřenou dlaň > 70 px (unit testy) + end-to-end; 30 testů + build zelené.
+* **Debug overlay shows nothing (RESOLVED):**
+  * *Příznak:* Zapnutí „Debug" (kostra ruky / náhled kamery) nezobrazilo nic – žádný obraz, žádný skeleton.
+  * *Skutečná příčina:* CSS stacking. Pixi canvas scény má `z-index: 1`, ale `.debug-overlay` žádný z-index (`auto`) → maloval se POD opakním pixi plátnem a nebyl nikdy vidět (nikdy nefungoval). Onion/play/grid overlaye mají z-index 12-14, proto fungovaly.
+  * *Oprava:* `style.css` – `.debug-overlay { z-index: 11 }` (nad scénou 1, pod stop-motion overlaye). Ověřeno headless Chromium: vykreslený červený/azurový obsah overlaye je nyní na snímku vidět (před opravou 0 pixelů).
 * Builder exports data-URL images (self-contained single file, slightly larger JSON) - fine for dev; swap for file paths in `config.json` if bundle size matters.
 * Rig arms rotate rigidly around the shoulder (simplified v1); no elbow/knee IK yet.
 * Full-page manuscript scans include background clutter - prefer isolated single-figure crops when adding new characters.
