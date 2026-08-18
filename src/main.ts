@@ -515,6 +515,10 @@ class AppManager {
         // Make the puppets visible right away (resting pose) so the user sees
         // what they are posing before any hand is tracked.
         this.renderer.placePuppetsAtDefaults();
+        // Sync the Ruka toggle to the actual hand-follow state (always true on
+        // entry after the exit handler resets it), so the UI never lies.
+        smBtnHand.textContent = this.renderer.isHandFollowEnabled() ? 'Ruka (ZAP)' : 'Ruka';
+        smBtnHand.classList.toggle('btn-primary', this.renderer.isHandFollowEnabled());
         // The bottom panel owns the background controls while in this mode,
         // so hide the duplicated top-bar scene group.
         sceneGroup.classList.add('hidden');
@@ -526,6 +530,10 @@ class AppManager {
         sceneGroup.classList.remove('hidden');
         this.fistFreezeActive = false;
         this.renderer.setFrozen(this.isMotionFrozen);
+        // Hand-follow is a stop-motion framing setting (Ruka toggle). Leaving
+        // the mode must restore default hand tracking, otherwise a session
+        // where the user disabled Ruka silently leaves normal mode frozen.
+        this.renderer.setHandFollowEnabled(true);
         this.showStatus('Stop-motion režim vypnut.');
       }
       setTimeout(() => this.hideStatus(), 3000);
