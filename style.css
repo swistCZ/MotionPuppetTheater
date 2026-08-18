@@ -535,6 +535,7 @@ body {
   height: 100%;
   pointer-events: none;
   opacity: 0.85;
+  z-index: 11; /* above the opaque Pixi stage canvas (z-index 1) but below the stop-motion overlays */
   display: none;
 }
 

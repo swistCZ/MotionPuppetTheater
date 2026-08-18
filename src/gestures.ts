@@ -353,18 +353,23 @@ export function processHandLandmarks(
   ].sort((x, y) => y.a - x.a);
   const [armL, legL, legR, armR] = limbFingers; // leftmost -> leftArm, ..., rightmost -> rightArm
 
-  const armSpan = scale * 1.1; // horizontal arm reach
-  const legSpan = scale * 0.55; // legs hang closer to the body
+  const armSpan = scale * 1.7; // splay-driven horizontal arm reach
+  const legSpan = scale * 1.15; // legs spread a little less than the arms
+  const armBase = 45; // constant base reach so arms always stick out visibly
+  const legBase = 16; // constant base stance so legs never collapse onto the body
   const armDrop = scale * 0.06 + 6; // arms rest slightly below the shoulders
-  const legLen = scale * 0.3 + 20; // leg length
+  const legLen = scale * 0.36 + 24; // leg length
 
   // Calculate limb offset vectors relative to the torso center (scaled pixels).
+  // The constant bases keep the reach predictable at every hand distance (the
+  // `across` variation alone is too small to read on screen); the splay-driven
+  // span adds a wide, clearly visible range from a tucked fist to spread palms.
   const limbs: LimbOffsets = {
     head: { x: -across(indexTip) * 0.6 * scale, y: -scale * 0.28 - along(indexTip) * scale * 0.4 },
-    leftArm: { x: -armL.a * armSpan, y: armDrop },
-    rightArm: { x: -armR.a * armSpan, y: armDrop },
-    leftLeg: { x: -legL.a * legSpan, y: legLen },
-    rightLeg: { x: -legR.a * legSpan, y: legLen },
+    leftArm: { x: -(armBase + armL.a * armSpan), y: armDrop },
+    rightArm: { x: armBase - armR.a * armSpan, y: armDrop },
+    leftLeg: { x: -(legBase + legL.a * legSpan), y: legLen },
+    rightLeg: { x: legBase - legR.a * legSpan, y: legLen },
   };
 
   // 100% EXCLUSIVE Index Finger Flexion for Mouth Opening

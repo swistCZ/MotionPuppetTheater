@@ -218,6 +218,14 @@ describe('gestures math & matching module', () => {
       expect(state.limbs.head.y).toBeLessThan(0); // head above torso
     });
 
+    it('gives arms a wide, clearly visible reach for an open palm', () => {
+      const state = processHandLandmarks(openPalm('Left'), 'Left', 1000, 800);
+      const reach = (p: { x: number; y: number }) => Math.hypot(p.x, p.y);
+      // Base + splay reach must be obvious on screen, not a stub at the shoulder.
+      expect(reach(state.limbs.leftArm)).toBeGreaterThan(70);
+      expect(reach(state.limbs.rightArm)).toBeGreaterThan(70);
+    });
+
     it('keeps legs pointing down and uncrossed for a vertical open palm (Left hand)', () => {
       const state = processHandLandmarks(openPalm('Left'), 'Left', 1000, 800);
       expect(state.limbs.leftLeg.y).toBeGreaterThan(0);
