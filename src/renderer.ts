@@ -346,7 +346,12 @@ export class PuppetRenderer {
   public setChainPropEnabled(enabled: boolean): void {
     if (this.chainProp) {
       const anchor = this.lastLeftState?.smoothedPosition ?? this.lastRightState?.smoothedPosition;
-      this.chainProp.setEnabled(enabled, anchor?.x ?? this.width / 2, anchor?.y ?? 40);
+      if (anchor) {
+        const local = this.toWorldLocal(anchor.x, anchor.y);
+        this.chainProp.setEnabled(enabled, local.x, local.y);
+      } else {
+        this.chainProp.setEnabled(enabled, this.width / 2, 40);
+      }
     }
   }
 
@@ -358,7 +363,8 @@ export class PuppetRenderer {
     if (!this.chainProp?.isEnabled()) return;
     const anchor = this.lastLeftState?.smoothedPosition ?? this.lastRightState?.smoothedPosition;
     if (!anchor) return;
-    this.chainProp.update(dtMs, anchor.x, anchor.y);
+    const local = this.toWorldLocal(anchor.x, anchor.y);
+    this.chainProp.update(dtMs, local.x, local.y);
   }
 
   /**
@@ -380,6 +386,13 @@ export class PuppetRenderer {
     this.worldContainer.scale.set(this.zoom);
     this.worldContainer.pivot.set(this.width / 2, this.height / 2);
     this.worldContainer.position.set(this.width / 2, this.height / 2);
+  }
+
+  /** Converts a stage/global coordinate into the world layer's local space so
+   * hand-driven objects (puppets, chain, theremin orbs) stay glued to the hand
+   * even when the stop-motion camera is zoomed in. Identity at zoom = 1. */
+  private toWorldLocal(x: number, y: number): { x: number; y: number } {
+    return this.worldContainer.toLocal({ x, y });
   }
 
   /**
@@ -864,17 +877,18 @@ export class PuppetRenderer {
     // 1. Left Hand - Pitch Orb (Glowing Cyan/Blue)
     if (leftHandState) {
       const pos = leftHandState.smoothedPosition;
+      const local = this.toWorldLocal(pos.x, pos.y);
       this.leftThereminOrb.clear();
 
       // Outer Pulsing Aura
       const auraRadius = 45 + pulsePhase + (frequency / 800) * 15;
-      this.leftThereminOrb.circle(pos.x, pos.y, auraRadius).fill({ color: 0x38bdf8, alpha: 0.25 });
+      this.leftThereminOrb.circle(local.x, local.y, auraRadius).fill({ color: 0x38bdf8, alpha: 0.25 });
 
       // Inner Core
-      this.leftThereminOrb.circle(pos.x, pos.y, 28).fill(0x0284c7).stroke({ width: 4, color: 0xe0f2fe });
+      this.leftThereminOrb.circle(local.x, local.y, 28).fill(0x0284c7).stroke({ width: 4, color: 0xe0f2fe });
 
       this.leftThereminText.text = `${Math.round(frequency)} Hz`;
-      this.leftThereminText.position.set(pos.x - 40, pos.y - 65);
+      this.leftThereminText.position.set(local.x - 40, local.y - 65);
       this.leftThereminText.visible = true;
     } else {
       this.leftThereminOrb.clear();
@@ -884,17 +898,18 @@ export class PuppetRenderer {
     // 2. Right Hand - Volume Orb (Glowing Magenta/Pink)
     if (rightHandState) {
       const pos = rightHandState.smoothedPosition;
+      const local = this.toWorldLocal(pos.x, pos.y);
       this.rightThereminOrb.clear();
 
       // Outer Pulsing Aura proportional to volume
       const auraRadius = 35 + volumeRatio * 35 + pulsePhase;
-      this.rightThereminOrb.circle(pos.x, pos.y, auraRadius).fill({ color: 0xf43f5e, alpha: 0.3 });
+      this.rightThereminOrb.circle(local.x, local.y, auraRadius).fill({ color: 0xf43f5e, alpha: 0.3 });
 
       // Inner Core
-      this.rightThereminOrb.circle(pos.x, pos.y, 28).fill(0xe11d48).stroke({ width: 4, color: 0xffe4e6 });
+      this.rightThereminOrb.circle(local.x, local.y, 28).fill(0xe11d48).stroke({ width: 4, color: 0xffe4e6 });
 
       this.rightThereminText.text = `${Math.round(volumeRatio * 100)} %`;
-      this.rightThereminText.position.set(pos.x - 45, pos.y - 65);
+      this.rightThereminText.position.set(local.x - 45, local.y - 65);
       this.rightThereminText.visible = true;
     } else {
       this.rightThereminOrb.clear();
@@ -1159,8 +1174,10 @@ export class PuppetRenderer {
     // Empty slot: keep hand tracking for other features but don't move a puppet.
     if (puppet.preset === 'none') return;
 
-    // Smooth position update for Torso center
-    puppet.container.position.set(state.smoothedPosition.x, state.smoothedPosition.y);
+    // Smooth position update for Torso center (world-layer local coords so the
+    // puppet stays glued to the hand even when the stop-motion camera zooms).
+    const local = this.toWorldLocal(state.smoothedPosition.x, state.smoothedPosition.y);
+    puppet.container.position.set(local.x, local.y);
     // Handles stay glued to joints/endpoints while the hand drives the pose.
     if (this.poseEditing) this.layoutHandles(puppet);
 
