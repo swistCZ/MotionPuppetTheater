@@ -12,8 +12,10 @@ import {
   calculateDistance2D,
   calculateAngleRadians,
   matchDetectedHandsToPuppets,
+  processHandLandmarks,
   DetectedHandInput,
-  Point2D
+  Point2D,
+  Point3D
 } from './gestures';
 
 /** Builds a hand whose palm (landmark 9) lands at the given mirrored screen coords. */
@@ -187,5 +189,67 @@ describe('gestures math & matching module', () => {
   it('single hand with no history falls back to screen half', () => {
     const matched = matchDetectedHandsToPuppets([handAt(700, 400)], undefined, undefined, 1000, 800);
     expect(matched[0].puppetSlot).toBe('Right');
+  });
+
+  describe('processHandLandmarks limb mapping (natural stance)', () => {
+    /** Builds a realistic open palm facing the camera, fingers up and slightly
+     * spread. For a Left hand the thumb sits on the image-left (x≈0.32); a
+     * Right hand is its mirror image. */
+    function openPalm(label: 'Left' | 'Right'): Point3D[] {
+      const base = [
+        [0.50, 0.75], // 0 wrist
+        [0.40, 0.70], [0.36, 0.63], [0.34, 0.56], [0.32, 0.48], // 1-4 thumb
+        [0.45, 0.50], [0.44, 0.40], [0.43, 0.33], [0.43, 0.27], // 5-8 index
+        [0.50, 0.50], [0.49, 0.38], [0.48, 0.30], [0.48, 0.23], // 9-12 middle
+        [0.55, 0.51], [0.55, 0.41], [0.56, 0.34], [0.56, 0.29], // 13-16 ring
+        [0.61, 0.53], [0.61, 0.44], [0.62, 0.39], [0.62, 0.34], // 17-20 pinky
+      ];
+      return base.map(([x, y]) => ({
+        x: label === 'Right' ? 1.0 - x : x,
+        y,
+        z: 0,
+      }));
+    }
+
+    it('keeps arms out to the sides for a vertical open palm (Left hand)', () => {
+      const state = processHandLandmarks(openPalm('Left'), 'Left', 1000, 800);
+      expect(state.limbs.leftArm.x).toBeLessThan(0); // points puppet-left
+      expect(state.limbs.rightArm.x).toBeGreaterThan(0); // points puppet-right
+      expect(state.limbs.head.y).toBeLessThan(0); // head above torso
+    });
+
+    it('keeps legs pointing down and uncrossed for a vertical open palm (Left hand)', () => {
+      const state = processHandLandmarks(openPalm('Left'), 'Left', 1000, 800);
+      expect(state.limbs.leftLeg.y).toBeGreaterThan(0);
+      expect(state.limbs.rightLeg.y).toBeGreaterThan(0);
+      expect(state.limbs.leftLeg.x).toBeLessThan(state.limbs.rightLeg.x);
+    });
+
+    it('keeps arms out and legs down for a vertical open palm (Right hand)', () => {
+      const state = processHandLandmarks(openPalm('Right'), 'Right', 1000, 800);
+      expect(state.limbs.leftArm.x).toBeLessThan(0);
+      expect(state.limbs.rightArm.x).toBeGreaterThan(0);
+      expect(state.limbs.leftLeg.y).toBeGreaterThan(0);
+      expect(state.limbs.rightLeg.y).toBeGreaterThan(0);
+      expect(state.limbs.leftLeg.x).toBeLessThan(state.limbs.rightLeg.x);
+    });
+
+    it('tucks the arms in for a fist (fingertips curled to the palm)', () => {
+      // Keep the knuckles (Mcps) spread so the palm width is realistic, but
+      // curl every fingertip in toward the palm center as a real fist does.
+      const fist = openPalm('Left').map((lm, i) => {
+        const isTip = [4, 8, 12, 16, 20].includes(i);
+        return { ...lm, x: isTip ? 0.5 : lm.x, y: isTip ? 0.5 : lm.y };
+      });
+      const openState = processHandLandmarks(openPalm('Left'), 'Left', 1000, 800);
+      const fistState = processHandLandmarks(fist, 'Left', 1000, 800);
+      const reach = (p: { x: number; y: number }) => Math.hypot(p.x, p.y);
+      // Arms must pull in toward the torso when the fingers curl.
+      expect(reach(fistState.limbs.leftArm)).toBeLessThan(reach(openState.limbs.leftArm));
+      expect(reach(fistState.limbs.rightArm)).toBeLessThan(reach(openState.limbs.rightArm));
+      // Legs keep pointing down (the puppet stays standing).
+      expect(fistState.limbs.leftLeg.y).toBeGreaterThan(0);
+      expect(fistState.limbs.rightLeg.y).toBeGreaterThan(0);
+    });
   });
 });

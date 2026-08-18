@@ -303,28 +303,68 @@ export function processHandLandmarks(
   const palmWidth = calculateDistance2D(indexMcp, pinkyMcp);
   const scale = limbScale(palmWidth);
 
-  // Calculate limb offset vectors relative to Palm Center (scaled to pixel coordinates)
+  // Hand-local frame so the puppet limbs stay natural regardless of how the
+  // hand is rotated on screen:
+  //   - `fwd` points along the fingers (palm -> middle fingertip),
+  //   - `side` points toward the puppet's LEFT (the pinky side for a Left hand,
+  //     the thumb side for a Right hand, after the X-mirror).
+  // Each fingertip is then expressed as (across, along). Using only the ACROSS
+  // component for the arms/legs keeps them hanging at the puppet's sides even
+  // when the palm is held vertical (fingers up), which the old raw
+  // tip-minus-palm mapping turned into twisted, up-pointing or crossed limbs.
+  let fwdX = middleTip.x - palmCenter.x;
+  let fwdY = middleTip.y - palmCenter.y;
+  let fwdLen = Math.hypot(fwdX, fwdY);
+  if (fwdLen < 1e-6) {
+    fwdX = 0;
+    fwdY = -1;
+    fwdLen = 1;
+  }
+  fwdX /= fwdLen;
+  fwdY /= fwdLen;
+
+  let sideX = pinkyMcp.x - indexMcp.x;
+  let sideY = pinkyMcp.y - indexMcp.y;
+  let sideLen = Math.hypot(sideX, sideY);
+  if (sideLen < 1e-6) {
+    sideX = fwdY;
+    sideY = -fwdX;
+    sideLen = 1;
+  }
+  sideX /= sideLen;
+  sideY /= sideLen;
+  // The pinky side of the hand is the puppet's LEFT for a Left hand and the
+  // puppet's RIGHT for a Right hand, so flip the axis for Right hands.
+  if (handType === 'Right') {
+    sideX = -sideX;
+    sideY = -sideY;
+  }
+
+  const across = (p: Point2D): number => (p.x - palmCenter.x) * sideX + (p.y - palmCenter.y) * sideY; // + = puppet-left
+  const along = (p: Point2D): number => (p.x - palmCenter.x) * fwdX + (p.y - palmCenter.y) * fwdY; // + = extended
+
+  // Sort the four limb fingers by how far left they sit (puppet side), so the
+  // puppet's arms and legs never cross, regardless of handedness or rotation.
+  const limbFingers = [
+    { a: across(thumbTip) },
+    { a: across(middleTip) },
+    { a: across(ringTip) },
+    { a: across(pinkyTip) },
+  ].sort((x, y) => y.a - x.a);
+  const [armL, legL, legR, armR] = limbFingers; // leftmost -> leftArm, ..., rightmost -> rightArm
+
+  const armSpan = scale * 1.1; // horizontal arm reach
+  const legSpan = scale * 0.55; // legs hang closer to the body
+  const armDrop = scale * 0.06 + 6; // arms rest slightly below the shoulders
+  const legLen = scale * 0.3 + 20; // leg length
+
+  // Calculate limb offset vectors relative to the torso center (scaled pixels).
   const limbs: LimbOffsets = {
-    head: {
-      x: (indexTip.x - palmCenter.x) * scale,
-      y: (indexTip.y - palmCenter.y) * scale - 40,
-    },
-    leftArm: {
-      x: (thumbTip.x - palmCenter.x) * scale - 50,
-      y: (thumbTip.y - palmCenter.y) * scale,
-    },
-    rightArm: {
-      x: (middleTip.x - palmCenter.x) * scale + 50,
-      y: (middleTip.y - palmCenter.y) * scale,
-    },
-    leftLeg: {
-      x: (ringTip.x - palmCenter.x) * scale - 25,
-      y: (ringTip.y - palmCenter.y) * scale + 60,
-    },
-    rightLeg: {
-      x: (pinkyTip.x - palmCenter.x) * scale + 25,
-      y: (pinkyTip.y - palmCenter.y) * scale + 60,
-    },
+    head: { x: -across(indexTip) * 0.6 * scale, y: -scale * 0.28 - along(indexTip) * scale * 0.4 },
+    leftArm: { x: -armL.a * armSpan, y: armDrop },
+    rightArm: { x: -armR.a * armSpan, y: armDrop },
+    leftLeg: { x: -legL.a * legSpan, y: legLen },
+    rightLeg: { x: -legR.a * legSpan, y: legLen },
   };
 
   // 100% EXCLUSIVE Index Finger Flexion for Mouth Opening
