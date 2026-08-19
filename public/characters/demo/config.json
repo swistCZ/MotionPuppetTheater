@@ -18,9 +18,9 @@
     "hipL": { "x": 126, "y": 258 },
     "hipR": { "x": 174, "y": 258 }
   },
-  "leftArm": { "pivot": { "x": 30, "y": 24 }, "restHandAngle": 1.666 },
-  "rightArm": { "pivot": { "x": 30, "y": 24 }, "restHandAngle": 1.476 },
-  "leftLeg": { "pivot": { "x": 22, "y": 8 }, "restAngle": 0 },
-  "rightLeg": { "pivot": { "x": 22, "y": 8 }, "restAngle": 0 },
+  "leftArm": { "pivot": { "x": 30, "y": 24 }, "restHandAngle": 1.666, "elbow": { "x": 24, "y": 88 } },
+  "rightArm": { "pivot": { "x": 30, "y": 24 }, "restHandAngle": 1.476, "elbow": { "x": 36, "y": 88 } },
+  "leftLeg": { "pivot": { "x": 22, "y": 8 }, "restAngle": 0, "knee": { "x": 22, "y": 66 } },
+  "rightLeg": { "pivot": { "x": 22, "y": 8 }, "restAngle": 0, "knee": { "x": 22, "y": 66 } },
   "head": { "bob": 1 }
 }

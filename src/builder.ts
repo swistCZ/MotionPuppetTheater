@@ -2,7 +2,20 @@ import { CutoutRigConfig, Point, RigDimensions, RigPartFile, validateRigConfig }
 import { saveLocalCharacter } from './rigAssets';
 
 type PartKey = 'body' | 'head' | 'leftArm' | 'rightArm' | 'leftLeg' | 'rightLeg';
-type Mode = 'shoulderL' | 'shoulderR' | 'neck' | 'hipL' | 'hipR' | 'pivotL' | 'pivotR' | 'legPivotL' | 'legPivotR';
+type Mode =
+  | 'shoulderL'
+  | 'shoulderR'
+  | 'neck'
+  | 'hipL'
+  | 'hipR'
+  | 'pivotL'
+  | 'pivotR'
+  | 'legPivotL'
+  | 'legPivotR'
+  | 'elbowL'
+  | 'elbowR'
+  | 'kneeL'
+  | 'kneeR';
 
 const ALL_PARTS: PartKey[] = ['body', 'head', 'leftArm', 'rightArm', 'leftLeg', 'rightLeg'];
 const MOVABLE_PARTS: PartKey[] = ['head', 'leftArm', 'rightArm', 'leftLeg', 'rightLeg'];
@@ -21,9 +34,11 @@ interface LoadedPart {
 /** Working copy of the config with all optional joints present. */
 interface WorkingConfig extends CutoutRigConfig {
   body: CutoutRigConfig['body'] & { neck: Point; hipL: Point; hipR: Point };
-  leftLeg: NonNullable<CutoutRigConfig['leftLeg']>;
-  rightLeg: NonNullable<CutoutRigConfig['rightLeg']>;
+  leftLeg: NonNullable<CutoutRigConfig['leftLeg']> & { knee: Point };
+  rightLeg: NonNullable<CutoutRigConfig['rightLeg']> & { knee: Point };
   head: NonNullable<CutoutRigConfig['head']>;
+  leftArm: CutoutRigConfig['leftArm'] & { elbow: Point };
+  rightArm: CutoutRigConfig['rightArm'] & { elbow: Point };
 }
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id.replace(/^#/, '')) as T;
@@ -51,10 +66,10 @@ const cfg: WorkingConfig = {
     hipL: { x: 0, y: 0 },
     hipR: { x: 0, y: 0 },
   },
-  leftArm: { pivot: { x: 0, y: 0 }, restHandAngle: Math.PI / 2 },
-  rightArm: { pivot: { x: 0, y: 0 }, restHandAngle: Math.PI / 2 },
-  leftLeg: { pivot: { x: 0, y: 0 }, restAngle: 0 },
-  rightLeg: { pivot: { x: 0, y: 0 }, restAngle: 0 },
+  leftArm: { pivot: { x: 0, y: 0 }, restHandAngle: Math.PI / 2, elbow: { x: 0, y: 0 } },
+  rightArm: { pivot: { x: 0, y: 0 }, restHandAngle: Math.PI / 2, elbow: { x: 0, y: 0 } },
+  leftLeg: { pivot: { x: 0, y: 0 }, restAngle: 0, knee: { x: 0, y: 0 } },
+  rightLeg: { pivot: { x: 0, y: 0 }, restAngle: 0, knee: { x: 0, y: 0 } },
   head: { bob: 1 },
 };
 
@@ -218,6 +233,7 @@ function applyDefaults(key: PartKey): void {
       const arm = key === 'leftArm' ? cfg.leftArm : cfg.rightArm;
       arm.pivot = { x: round(p.width / 2), y: Math.max(round(b.t + 4), 0) };
       arm.restHandAngle = Math.atan2(b.cy - arm.pivot.y, b.cx - arm.pivot.x);
+      arm.elbow = { x: round(b.cx), y: Math.max(round(b.t + b.h * 0.5), arm.pivot.y + 4) };
       break;
     }
     case 'leftLeg':
@@ -225,10 +241,34 @@ function applyDefaults(key: PartKey): void {
       const leg = key === 'leftLeg' ? cfg.leftLeg : cfg.rightLeg;
       leg.pivot = { x: round(p.width / 2), y: Math.max(round(b.t + 4), 0) };
       leg.restAngle = 0;
+      leg.knee = { x: round(b.cx), y: Math.max(round(b.t + b.h * 0.45), leg.pivot.y + 4) };
       break;
     }
     case 'head':
       break;
+  }
+}
+
+/** Fills sensible elbow/knee defaults for any limb that still has a (0,0)
+ * joint (e.g. configs imported before two-bone IK existed). */
+function ensureLimbJoints(): void {
+  for (const key of ['leftArm', 'rightArm'] as const) {
+    const p = parts[key];
+    if (!p) continue;
+    const arm = key === 'leftArm' ? cfg.leftArm : cfg.rightArm;
+    if (arm.elbow.x === 0 && arm.elbow.y === 0) {
+      const b = opaqueBounds(p.canvas);
+      arm.elbow = { x: round(b.cx), y: Math.max(round(b.t + b.h * 0.5), arm.pivot.y + 4) };
+    }
+  }
+  for (const key of ['leftLeg', 'rightLeg'] as const) {
+    const p = parts[key];
+    if (!p) continue;
+    const leg = key === 'leftLeg' ? cfg.leftLeg : cfg.rightLeg;
+    if (leg.knee.x === 0 && leg.knee.y === 0) {
+      const b = opaqueBounds(p.canvas);
+      leg.knee = { x: round(b.cx), y: Math.max(round(b.t + b.h * 0.45), leg.pivot.y + 4) };
+    }
   }
 }
 
@@ -292,16 +332,26 @@ async function importConfig(file: File): Promise<void> {
   cfg.leftArm = {
     pivot: { ...json.leftArm.pivot },
     restHandAngle: json.leftArm.restHandAngle ?? Math.PI / 2,
+    elbow: json.leftArm.elbow ? { ...json.leftArm.elbow } : { ...cfg.leftArm.elbow },
   };
   cfg.rightArm = {
     pivot: { ...json.rightArm.pivot },
     restHandAngle: json.rightArm.restHandAngle ?? Math.PI / 2,
+    elbow: json.rightArm.elbow ? { ...json.rightArm.elbow } : { ...cfg.rightArm.elbow },
   };
   cfg.leftLeg = json.leftLeg
-    ? { pivot: { ...json.leftLeg.pivot }, restAngle: json.leftLeg.restAngle ?? 0 }
+    ? {
+        pivot: { ...json.leftLeg.pivot },
+        restAngle: json.leftLeg.restAngle ?? 0,
+        knee: json.leftLeg.knee ? { ...json.leftLeg.knee } : { ...cfg.leftLeg.knee },
+      }
     : cfg.leftLeg;
   cfg.rightLeg = json.rightLeg
-    ? { pivot: { ...json.rightLeg.pivot }, restAngle: json.rightLeg.restAngle ?? 0 }
+    ? {
+        pivot: { ...json.rightLeg.pivot },
+        restAngle: json.rightLeg.restAngle ?? 0,
+        knee: json.rightLeg.knee ? { ...json.rightLeg.knee } : { ...cfg.rightLeg.knee },
+      }
     : cfg.rightLeg;
   cfg.head = json.head ? { bob: json.head.bob ?? 1 } : cfg.head;
 
@@ -342,6 +392,8 @@ async function importConfig(file: File): Promise<void> {
   }
   for (const key of ALL_PARTS) if (parts[key]) touched.add(key);
 
+  ensureLimbJoints();
+
   syncFromCfg();
   redraw();
 
@@ -372,6 +424,14 @@ function activeTarget(): { key: PartKey; point: Point } {
       return { key: 'leftLeg', point: cfg.leftLeg.pivot };
     case 'legPivotR':
       return { key: 'rightLeg', point: cfg.rightLeg.pivot };
+    case 'elbowL':
+      return { key: 'leftArm', point: cfg.leftArm.elbow };
+    case 'elbowR':
+      return { key: 'rightArm', point: cfg.rightArm.elbow };
+    case 'kneeL':
+      return { key: 'leftLeg', point: cfg.leftLeg.knee };
+    case 'kneeR':
+      return { key: 'rightLeg', point: cfg.rightLeg.knee };
   }
 }
 
@@ -401,6 +461,23 @@ function drawMain(): void {
     ctx.translate(ox + at.x * scale, oy + at.y * scale);
     ctx.rotate(rot);
     ctx.drawImage(p.canvas, -joint.pivot.x * scale, -joint.pivot.y * scale, p.width * scale, p.height * scale);
+    const jp = 'knee' in joint ? joint.knee : 'elbow' in joint ? joint.elbow : undefined;
+    const activeMode =
+      (key === 'leftArm' && mode === 'elbowL') ||
+      (key === 'rightArm' && mode === 'elbowR') ||
+      (key === 'leftLeg' && mode === 'kneeL') ||
+      (key === 'rightLeg' && mode === 'kneeR');
+    if (jp && (activeMode || (key.endsWith('Arm') && (mode === 'pivotL' || mode === 'pivotR')))) {
+      const jx = (jp.x - joint.pivot.x) * scale;
+      const jy = (jp.y - joint.pivot.y) * scale;
+      ctx.beginPath();
+      ctx.arc(jx, jy, activeMode ? 8 : 5, 0, Math.PI * 2);
+      ctx.fillStyle = activeMode ? '#5eead4' : 'rgba(94, 234, 212, 0.45)';
+      ctx.fill();
+      ctx.strokeStyle = '#1c1917';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
     ctx.restore();
   };
 
@@ -459,11 +536,44 @@ function drawPart(): void {
   const oy = (pc.height - p.height * scale) / 2;
   ctx.drawImage(p.canvas, ox, oy, p.width * scale, p.height * scale);
 
-  const px = ox + point.x * scale;
-  const py = oy + point.y * scale;
+  const isLimb = key === 'leftArm' || key === 'rightArm' || key === 'leftLeg' || key === 'rightLeg';
+  const joint = isLimb
+    ? key === 'leftArm'
+      ? cfg.leftArm
+      : key === 'rightArm'
+        ? cfg.rightArm
+        : key === 'leftLeg'
+          ? cfg.leftLeg
+          : cfg.rightLeg
+    : null;
+  const elbowOrKnee = isLimb && joint ? ('knee' in joint ? joint.knee : 'elbow' in joint ? joint.elbow : null) : null;
 
+  const ring = (x: number, y: number, r: number, color: string, fill = true): void => {
+    ctx.save();
+    ctx.strokeStyle = '#f8fafc';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.stroke();
+    if (fill) {
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(x, y, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  };
+
+  // Arms: rest-direction guide always from the shoulder pivot.
   if (key === 'leftArm' || key === 'rightArm') {
     const rest = key === 'leftArm' ? cfg.leftArm.restHandAngle : cfg.rightArm.restHandAngle;
+    const px = ox + joint!.pivot.x * scale;
+    const py = oy + joint!.pivot.y * scale;
     ctx.save();
     ctx.strokeStyle = 'rgba(88,166,255,.9)';
     ctx.lineWidth = 2;
@@ -476,22 +586,17 @@ function drawPart(): void {
     ctx.restore();
   }
 
-  ctx.save();
-  ctx.strokeStyle = '#f8fafc';
-  ctx.lineWidth = 4;
-  ctx.beginPath();
-  ctx.arc(px, py, 7, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.strokeStyle = '#f85149';
-  ctx.lineWidth = 2.5;
-  ctx.beginPath();
-  ctx.arc(px, py, 7, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.fillStyle = '#f85149';
-  ctx.beginPath();
-  ctx.arc(px, py, 2.5, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
+  if (isLimb && joint) {
+    const activeIsJoint = elbowOrKnee === point;
+    ring(ox + joint.pivot.x * scale, oy + joint.pivot.y * scale, 7, '#58a6ff', !activeIsJoint);
+    if (elbowOrKnee) {
+      ring(ox + elbowOrKnee.x * scale, oy + elbowOrKnee.y * scale, 7, activeIsJoint ? '#f85149' : '#5eead4', activeIsJoint);
+    }
+  } else {
+    const px = ox + point.x * scale;
+    const py = oy + point.y * scale;
+    ring(px, py, 7, '#f85149');
+  }
 }
 
 function previewPointFromEvent(e: MouseEvent, canvas: HTMLCanvasElement, scale: number, ox: number, oy: number): Point {
@@ -605,8 +710,8 @@ function buildConfig(): CutoutRigConfig {
       shoulderL: { ...cfg.body.shoulderL },
       shoulderR: { ...cfg.body.shoulderR },
     },
-    leftArm: { pivot: { ...cfg.leftArm.pivot }, restHandAngle: round3(cfg.leftArm.restHandAngle) },
-    rightArm: { pivot: { ...cfg.rightArm.pivot }, restHandAngle: round3(cfg.rightArm.restHandAngle) },
+    leftArm: { pivot: { ...cfg.leftArm.pivot }, restHandAngle: round3(cfg.leftArm.restHandAngle), elbow: { ...cfg.leftArm.elbow } },
+    rightArm: { pivot: { ...cfg.rightArm.pivot }, restHandAngle: round3(cfg.rightArm.restHandAngle), elbow: { ...cfg.rightArm.elbow } },
   };
 
   if (parts.head) {
@@ -617,12 +722,12 @@ function buildConfig(): CutoutRigConfig {
   if (parts.leftLeg) {
     out.parts.leftLeg = partFile('leftLeg');
     out.body.hipL = { ...cfg.body.hipL };
-    out.leftLeg = { pivot: { ...cfg.leftLeg.pivot }, restAngle: round3(cfg.leftLeg.restAngle) };
+    out.leftLeg = { pivot: { ...cfg.leftLeg.pivot }, restAngle: round3(cfg.leftLeg.restAngle), knee: { ...cfg.leftLeg.knee } };
   }
   if (parts.rightLeg) {
     out.parts.rightLeg = partFile('rightLeg');
     out.body.hipR = { ...cfg.body.hipR };
-    out.rightLeg = { pivot: { ...cfg.rightLeg.pivot }, restAngle: round3(cfg.rightLeg.restAngle) };
+    out.rightLeg = { pivot: { ...cfg.rightLeg.pivot }, restAngle: round3(cfg.rightLeg.restAngle), knee: { ...cfg.rightLeg.knee } };
   }
 
   return out;

@@ -1,5 +1,5 @@
 import { Texture, Sprite, Container, Rectangle } from 'pixi.js';
-import { CutoutRigConfig, RigPartFile } from './rig';
+import { CutoutRigConfig, Point, RigLimbIK, RigPartFile } from './rig';
 
 export interface RigRenderParts {
   bodySprite: Sprite;
@@ -7,12 +7,20 @@ export interface RigRenderParts {
   headSprite?: Sprite;
   leftArmContainer: Container;
   leftArmSprite: Sprite;
+  leftArmLower?: Sprite;
+  leftArmIK?: RigLimbIK;
   rightArmContainer: Container;
   rightArmSprite: Sprite;
+  rightArmLower?: Sprite;
+  rightArmIK?: RigLimbIK;
   leftLegContainer?: Container;
   leftLegSprite?: Sprite;
+  leftLegLower?: Sprite;
+  leftLegIK?: RigLimbIK;
   rightLegContainer?: Container;
   rightLegSprite?: Sprite;
+  rightLegLower?: Sprite;
+  rightLegIK?: RigLimbIK;
 }
 
 /** Fetches the list of available rig character ids (from characters/index.json). */
@@ -145,14 +153,22 @@ export function computeOpaqueBounds(
   const h = texture.height;
   if (w <= 0 || h <= 0) return new Rectangle(-w * anchorX, -h * anchorY, w, h);
 
+  // Respect the texture's frame: sub-textures (e.g. a limb split at the
+  // elbow) must only scan the pixels inside their own region of the canvas.
+  const frame = texture.frame;
+  const fx = frame.x;
+  const fy = frame.y;
+  const fw = frame.width;
+  const fh = frame.height;
+
   const resource = texture.source.resource;
   let canvas: HTMLCanvasElement | null = null;
   if (resource instanceof HTMLCanvasElement) {
     canvas = resource;
   } else if (resource instanceof HTMLImageElement) {
     canvas = document.createElement('canvas');
-    canvas.width = w;
-    canvas.height = h;
+    canvas.width = resource.naturalWidth;
+    canvas.height = resource.naturalHeight;
     const drawCtx = canvas.getContext('2d');
     if (drawCtx) drawCtx.drawImage(resource, 0, 0);
   }
@@ -163,18 +179,18 @@ export function computeOpaqueBounds(
 
   let data: Uint8ClampedArray;
   try {
-    data = ctx.getImageData(0, 0, w, h).data;
+    data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
   } catch {
     return new Rectangle(-w * anchorX, -h * anchorY, w, h);
   }
 
-  let minX = w;
-  let minY = h;
-  let maxX = -1;
-  let maxY = -1;
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      if (data[(y * w + x) * 4 + 3] > 8) {
+  let minX = fx + fw;
+  let minY = fy + fh;
+  let maxX = fx - 1;
+  let maxY = fy - 1;
+  for (let y = fy; y < fy + fh; y++) {
+    for (let x = fx; x < fx + fw; x++) {
+      if (data[(y * canvas.width + x) * 4 + 3] > 8) {
         if (x < minX) minX = x;
         if (x > maxX) maxX = x;
         if (y < minY) minY = y;
@@ -182,14 +198,102 @@ export function computeOpaqueBounds(
       }
     }
   }
-  if (maxX < 0) return new Rectangle(-w * anchorX, -h * anchorY, w, h);
+  if (maxX < fx - 1) return new Rectangle(-w * anchorX, -h * anchorY, w, h);
 
-  const x0 = Math.max(0, minX - margin);
-  const y0 = Math.max(0, minY - margin);
-  const x1 = Math.min(w, maxX + 1 + margin);
-  const y1 = Math.min(h, maxY + 1 + margin);
+  const x0 = Math.max(fx, minX - margin);
+  const y0 = Math.max(fy, minY - margin);
+  const x1 = Math.min(fx + fw, maxX + 1 + margin);
+  const y1 = Math.min(fy + fh, maxY + 1 + margin);
   // Convert texture-pixel bounds into sprite-local coords (origin = anchor).
-  return new Rectangle(x0 - w * anchorX, y0 - h * anchorY, x1 - x0, y1 - y0);
+  return new Rectangle(x0 - (fx + w * anchorX), y0 - (fy + h * anchorY), x1 - x0, y1 - y0);
+}
+
+/**
+ * Finds the limb's far end: the opaque pixel farthest from the given joint,
+ * scanning only the lower region (y >= joint.y). Used as the hand/foot for
+ * two-bone IK. Falls back to the bottom-center of the image when the canvas
+ * cannot be read.
+ */
+export function computeLimbEnd(canvas: HTMLCanvasElement, joint: Point): Point {
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) return { x: joint.x, y: canvas.height };
+  const { width, height } = canvas;
+  let data: Uint8ClampedArray;
+  try {
+    data = ctx.getImageData(0, 0, width, height).data;
+  } catch {
+    return { x: joint.x, y: height };
+  }
+  let bestX = joint.x;
+  let bestY = height;
+  let bestD = -1;
+  for (let y = Math.max(0, Math.floor(joint.y)); y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (data[(y * width + x) * 4 + 3] <= 8) continue;
+      const dx = x - joint.x;
+      const dy = y - joint.y;
+      const d = dx * dx + dy * dy;
+      if (d > bestD) {
+        bestD = d;
+        bestX = x;
+        bestY = y;
+      }
+    }
+  }
+  return { x: bestX, y: bestY };
+}
+
+/**
+ * Builds a single limb from a texture: either one rigid sprite (no joint) or
+ * an upper + lower pair split at the elbow/knee line. The lower sprite is a
+ * child of the upper one so rotating the upper carries the whole limb. When a
+ * joint is present, precomputes the two-bone IK geometry for the renderer.
+ */
+function buildBoneLimb(
+  texture: Texture,
+  canvas: HTMLCanvasElement,
+  pivot: Point,
+  joint: Point | undefined,
+  bendSign: 1 | -1
+): { sprite: Sprite; lower?: Sprite; ik?: RigLimbIK } {
+  const w = canvas.width;
+  const h = canvas.height;
+
+  if (!joint) {
+    const sprite = new Sprite(texture);
+    const ax = pivot.x / w;
+    const ay = pivot.y / h;
+    sprite.anchor.set(ax, ay);
+    sprite.hitArea = computeOpaqueBounds(texture, ax, ay);
+    return { sprite };
+  }
+
+  const jointY = Math.round(joint.y);
+  const upperTexture = new Texture({ source: texture.source, frame: new Rectangle(0, 0, w, jointY) });
+  const lowerTexture = new Texture({ source: texture.source, frame: new Rectangle(0, jointY, w, h - jointY) });
+
+  const upper = new Sprite(upperTexture);
+  const upperAx = pivot.x / w;
+  const upperAy = pivot.y / jointY;
+  upper.anchor.set(upperAx, upperAy);
+  upper.hitArea = computeOpaqueBounds(upperTexture, upperAx, upperAy);
+
+  const lower = new Sprite(lowerTexture);
+  lower.anchor.set(joint.x / w, 0);
+  lower.position.set(joint.x - pivot.x, joint.y - pivot.y);
+  lower.hitArea = computeOpaqueBounds(lowerTexture, joint.x / w, 0);
+  upper.addChild(lower);
+
+  const hand = computeLimbEnd(canvas, joint);
+  const ik: RigLimbIK = {
+    len1: Math.hypot(joint.x - pivot.x, joint.y - pivot.y),
+    len2: Math.hypot(hand.x - joint.x, hand.y - joint.y),
+    phi1: Math.atan2(joint.y - pivot.y, joint.x - pivot.x),
+    phi2: Math.atan2(hand.y - joint.y, hand.x - joint.x),
+    bendSign,
+  };
+
+  return { sprite: upper, lower, ik };
 }
 
 /**
@@ -200,27 +304,35 @@ export function computeOpaqueBounds(
  * sprite gets a trimmed hit area so only its visible pixels are draggable.
  */
 export async function buildRigParts(config: CutoutRigConfig): Promise<RigRenderParts> {
-  const bodyTexture = await loadPartTexture(config.parts.body);
-  const leftTexture = await loadPartTexture(config.parts.leftArm);
-  const rightTexture = await loadPartTexture(config.parts.rightArm);
+  const bodyCanvas = await loadPartCanvas(config.parts.body);
+  const leftArmCanvas = await loadPartCanvas(config.parts.leftArm);
+  const rightArmCanvas = await loadPartCanvas(config.parts.rightArm);
 
-  const bodySprite = new Sprite(bodyTexture);
+  const bodySprite = new Sprite(Texture.from(bodyCanvas));
   bodySprite.anchor.set(0.5, 0.5);
-  bodySprite.hitArea = computeOpaqueBounds(bodyTexture, 0.5, 0.5);
+  bodySprite.hitArea = computeOpaqueBounds(bodySprite.texture, 0.5, 0.5);
 
-  const leftArmSprite = new Sprite(leftTexture);
-  const leftAx = config.leftArm.pivot.x / leftTexture.width;
-  const leftAy = config.leftArm.pivot.y / leftTexture.height;
-  leftArmSprite.anchor.set(leftAx, leftAy);
-  leftArmSprite.rotation = config.leftArm.restHandAngle;
-  leftArmSprite.hitArea = computeOpaqueBounds(leftTexture, leftAx, leftAy);
+  const leftArmLimb = buildBoneLimb(
+    Texture.from(leftArmCanvas),
+    leftArmCanvas,
+    config.leftArm.pivot,
+    config.leftArm.elbow,
+    1
+  );
+  const leftArmSprite = leftArmLimb.sprite;
+  leftArmSprite.rotation = config.leftArm.restHandAngle - (leftArmLimb.ik ? leftArmLimb.ik.phi1 : 0);
+  if (leftArmLimb.lower) leftArmLimb.lower.rotation = 0;
 
-  const rightArmSprite = new Sprite(rightTexture);
-  const rightAx = config.rightArm.pivot.x / rightTexture.width;
-  const rightAy = config.rightArm.pivot.y / rightTexture.height;
-  rightArmSprite.anchor.set(rightAx, rightAy);
-  rightArmSprite.rotation = config.rightArm.restHandAngle;
-  rightArmSprite.hitArea = computeOpaqueBounds(rightTexture, rightAx, rightAy);
+  const rightArmLimb = buildBoneLimb(
+    Texture.from(rightArmCanvas),
+    rightArmCanvas,
+    config.rightArm.pivot,
+    config.rightArm.elbow,
+    1
+  );
+  const rightArmSprite = rightArmLimb.sprite;
+  rightArmSprite.rotation = config.rightArm.restHandAngle - (rightArmLimb.ik ? rightArmLimb.ik.phi1 : 0);
+  if (rightArmLimb.lower) rightArmLimb.lower.rotation = 0;
 
   const leftArmContainer = new Container();
   leftArmContainer.addChild(leftArmSprite);
@@ -230,38 +342,54 @@ export async function buildRigParts(config: CutoutRigConfig): Promise<RigRenderP
   let headContainer: Container | undefined;
   let headSprite: Sprite | undefined;
   if (config.parts.head) {
-    const headTexture = await loadPartTexture(config.parts.head);
-    headSprite = new Sprite(headTexture);
+    const headCanvas = await loadPartCanvas(config.parts.head);
+    headSprite = new Sprite(Texture.from(headCanvas));
     headSprite.anchor.set(0.5, 0.5);
-    headSprite.hitArea = computeOpaqueBounds(headTexture, 0.5, 0.5);
+    headSprite.hitArea = computeOpaqueBounds(headSprite.texture, 0.5, 0.5);
     headContainer = new Container();
     headContainer.addChild(headSprite);
   }
 
   let leftLegContainer: Container | undefined;
   let leftLegSprite: Sprite | undefined;
+  let leftLegLower: Sprite | undefined;
+  let leftLegIK: RigLimbIK | undefined;
   if (config.parts.leftLeg && config.leftLeg) {
-    const legTexture = await loadPartTexture(config.parts.leftLeg);
-    const ax = config.leftLeg.pivot.x / legTexture.width;
-    const ay = config.leftLeg.pivot.y / legTexture.height;
-    leftLegSprite = new Sprite(legTexture);
-    leftLegSprite.anchor.set(ax, ay);
-    leftLegSprite.rotation = config.leftLeg.restAngle;
-    leftLegSprite.hitArea = computeOpaqueBounds(legTexture, ax, ay);
+    const legCanvas = await loadPartCanvas(config.parts.leftLeg);
+    const limb = buildBoneLimb(
+      Texture.from(legCanvas),
+      legCanvas,
+      config.leftLeg.pivot,
+      config.leftLeg.knee,
+      -1
+    );
+    leftLegSprite = limb.sprite;
+    leftLegSprite.rotation = config.leftLeg.restAngle - (limb.ik ? limb.ik.phi1 : 0);
+    if (limb.lower) limb.lower.rotation = 0;
+    leftLegLower = limb.lower;
+    leftLegIK = limb.ik;
     leftLegContainer = new Container();
     leftLegContainer.addChild(leftLegSprite);
   }
 
   let rightLegContainer: Container | undefined;
   let rightLegSprite: Sprite | undefined;
+  let rightLegLower: Sprite | undefined;
+  let rightLegIK: RigLimbIK | undefined;
   if (config.parts.rightLeg && config.rightLeg) {
-    const legTexture = await loadPartTexture(config.parts.rightLeg);
-    const ax = config.rightLeg.pivot.x / legTexture.width;
-    const ay = config.rightLeg.pivot.y / legTexture.height;
-    rightLegSprite = new Sprite(legTexture);
-    rightLegSprite.anchor.set(ax, ay);
-    rightLegSprite.rotation = config.rightLeg.restAngle;
-    rightLegSprite.hitArea = computeOpaqueBounds(legTexture, ax, ay);
+    const legCanvas = await loadPartCanvas(config.parts.rightLeg);
+    const limb = buildBoneLimb(
+      Texture.from(legCanvas),
+      legCanvas,
+      config.rightLeg.pivot,
+      config.rightLeg.knee,
+      -1
+    );
+    rightLegSprite = limb.sprite;
+    rightLegSprite.rotation = config.rightLeg.restAngle - (limb.ik ? limb.ik.phi1 : 0);
+    if (limb.lower) limb.lower.rotation = 0;
+    rightLegLower = limb.lower;
+    rightLegIK = limb.ik;
     rightLegContainer = new Container();
     rightLegContainer.addChild(rightLegSprite);
   }
@@ -272,11 +400,19 @@ export async function buildRigParts(config: CutoutRigConfig): Promise<RigRenderP
     headSprite,
     leftArmContainer,
     leftArmSprite,
+    leftArmLower: leftArmLimb.lower,
+    leftArmIK: leftArmLimb.ik,
     rightArmContainer,
     rightArmSprite,
+    rightArmLower: rightArmLimb.lower,
+    rightArmIK: rightArmLimb.ik,
     leftLegContainer,
     leftLegSprite,
+    leftLegLower,
+    leftLegIK,
     rightLegContainer,
     rightLegSprite,
+    rightLegLower,
+    rightLegIK,
   };
 }

@@ -5,6 +5,6 @@
       <stop offset="1" stop-color="#b45309"/>
     </linearGradient>
   </defs>
-  <path d="M30 24 L18 150" stroke="#1c1917" stroke-width="24" stroke-linecap="round" fill="none"/>
-  <path d="M30 24 L18 150" stroke="url(#tunic)" stroke-width="16" stroke-linecap="round" fill="none"/>
+  <path d="M30 24 L24 88 L20 150" stroke="#1c1917" stroke-width="24" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <path d="M30 24 L24 88 L20 150" stroke="url(#tunic)" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
 </svg>

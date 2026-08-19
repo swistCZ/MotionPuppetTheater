@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { armRotation, validateRigConfig, CutoutRigConfig } from './rig';
+import { armRotation, solveTwoBoneIK, validateRigConfig, CutoutRigConfig } from './rig';
 
 const baseConfig: CutoutRigConfig = {
   id: 'demo',
@@ -53,6 +53,56 @@ describe('rig armRotation', () => {
   });
 });
 
+describe('rig solveTwoBoneIK', () => {
+  const fwd = (len1: number, len2: number, pose: { angle1: number; angle2: number }): { x: number; y: number } => ({
+    x: len1 * Math.cos(pose.angle1) + len2 * Math.cos(pose.angle1 + pose.angle2),
+    y: len1 * Math.sin(pose.angle1) + len2 * Math.sin(pose.angle1 + pose.angle2),
+  });
+
+  it('reaches a full-length target straight', () => {
+    const pose = solveTwoBoneIK({ x: 2, y: 0 }, 1, 1, 1);
+    expect(pose.angle1).toBeCloseTo(0);
+    expect(pose.angle2).toBeCloseTo(0);
+  });
+
+  it('places the hand exactly on a short target with a downward elbow bend', () => {
+    const pose = solveTwoBoneIK({ x: 1, y: 0 }, 1, 1, 1);
+    expect(pose.angle1).toBeCloseTo(Math.PI / 3);
+    expect(pose.angle2).toBeCloseTo(-(2 * Math.PI) / 3);
+    const hand = fwd(1, 1, pose);
+    expect(hand.x).toBeCloseTo(1);
+    expect(hand.y).toBeCloseTo(0);
+    expect(Math.sin(pose.angle1)).toBeGreaterThan(0);
+  });
+
+  it('mirrors the bend with a negative bend sign (knees)', () => {
+    const pose = solveTwoBoneIK({ x: 1, y: 0 }, 1, 1, -1);
+    expect(Math.sin(pose.angle1)).toBeLessThan(0);
+    const hand = fwd(1, 1, pose);
+    expect(hand.x).toBeCloseTo(1);
+    expect(hand.y).toBeCloseTo(0);
+  });
+
+  it('clamps an unreachable target to full stretch along its direction', () => {
+    const pose = solveTwoBoneIK({ x: 0, y: 5 }, 1, 1, 1);
+    expect(pose.angle1).toBeCloseTo(Math.PI / 2);
+    expect(pose.angle2).toBeCloseTo(0);
+  });
+
+  it('never returns NaN for a degenerate zero target', () => {
+    const pose = solveTwoBoneIK({ x: 0, y: 0 }, 1, 1, 1);
+    expect(Number.isNaN(pose.angle1)).toBe(false);
+    expect(Number.isNaN(pose.angle2)).toBe(false);
+  });
+
+  it('reaches targets pointing up (negative y)', () => {
+    const pose = solveTwoBoneIK({ x: 1, y: -1 }, 1, 1, 1);
+    const hand = fwd(1, 1, pose);
+    expect(hand.x).toBeCloseTo(1);
+    expect(hand.y).toBeCloseTo(-1);
+  });
+});
+
 describe('rig validateRigConfig', () => {
   it('accepts a valid config with head and legs', () => {
     expect(validateRigConfig(baseConfig, dims)).toEqual([]);
@@ -100,6 +150,33 @@ describe('rig validateRigConfig', () => {
     };
     const errors = validateRigConfig(bad, dims);
     expect(errors.some((e) => e.includes('leftLeg.pivot'))).toBe(true);
+  });
+
+  it('rejects an elbow above its shoulder pivot', () => {
+    const bad = {
+      ...baseConfig,
+      leftArm: { ...baseConfig.leftArm, elbow: { x: 30, y: 10 } },
+    };
+    const errors = validateRigConfig(bad, dims);
+    expect(errors.some((e) => e.includes('leftArm.elbow'))).toBe(true);
+  });
+
+  it('accepts an elbow below the pivot', () => {
+    const ok = {
+      ...baseConfig,
+      leftArm: { ...baseConfig.leftArm, elbow: { x: 26, y: 90 } },
+      rightArm: { ...baseConfig.rightArm, elbow: { x: 26, y: 90 } },
+    };
+    expect(validateRigConfig(ok, dims)).toEqual([]);
+  });
+
+  it('accepts a knee below the hip pivot', () => {
+    const ok = {
+      ...baseConfig,
+      leftLeg: { ...baseConfig.leftLeg!, knee: { x: 22, y: 60 } },
+      rightLeg: { ...baseConfig.rightLeg!, knee: { x: 22, y: 60 } },
+    };
+    expect(validateRigConfig(ok, dims)).toEqual([]);
   });
 
   it('rejects a shoulder outside the body image', () => {

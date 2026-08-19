@@ -1,10 +1,13 @@
 import { Application, Container, Sprite, Graphics, Assets, Texture, Text, TextStyle, FederatedPointerEvent, TilingSprite, Rectangle } from 'pixi.js';
 import { HandState, clamp, shortestAngleDelta, spreadFactor, Point2D } from './gestures';
-import { CutoutRigConfig, armRotation } from './rig';
+import { CutoutRigConfig, RigLimbIK, armRotation, solveTwoBoneIK } from './rig';
 import { RigRenderParts, buildRigParts, fetchRigConfig, loadLocalCharacterConfig } from './rigAssets';
 import { ChainProp } from './chainProp';
 
 const HANDLE_R = 14;
+
+/** Maximum elbow/knee bend from two-bone IK (radians, ~126 deg). */
+const MAX_LIMB_BEND = 2.2;
 
 export type PuppetPreset = 'fox' | 'robot' | 'custom' | 'none' | `rig:${string}`;
 
@@ -18,6 +21,10 @@ export interface PuppetPoseSnapshot {
     rightArm?: number;
     leftLeg?: number;
     rightLeg?: number;
+    leftArmLower?: number;
+    rightArmLower?: number;
+    leftLegLower?: number;
+    rightLegLower?: number;
   };
   headPosition?: Point2D;
 }
@@ -517,25 +524,44 @@ export class PuppetRenderer {
       if (by.head && parts.headContainer) {
         by.head.position.copyFrom(parts.headContainer.position);
       }
+      const atLimbEnd = (part: 'leftArm' | 'rightArm' | 'leftLeg' | 'rightLeg', fallback: () => void): void => {
+        const world = this.limbEndWorld(parts, part);
+        if (world) {
+          const local = puppet.container.toLocal(world);
+          by[part]!.position.set(local.x, local.y);
+        } else {
+          fallback();
+        }
+      };
       if (by.leftArm) {
-        const s = config.body.shoulderL;
-        by.leftArm.position.set(s.x - bw / 2, s.y - bh / 2);
+        atLimbEnd('leftArm', () => {
+          const s = config.body.shoulderL;
+          by.leftArm!.position.set(s.x - bw / 2, s.y - bh / 2);
+        });
       }
       if (by.rightArm) {
-        const s = config.body.shoulderR;
-        by.rightArm.position.set(s.x - bw / 2, s.y - bh / 2);
+        atLimbEnd('rightArm', () => {
+          const s = config.body.shoulderR;
+          by.rightArm!.position.set(s.x - bw / 2, s.y - bh / 2);
+        });
       }
-      if (by.leftLeg && parts.leftLegContainer) {
-        by.leftLeg.position.copyFrom(parts.leftLegContainer.position);
-      } else if (by.leftLeg) {
-        const hip = config.body.hipL ?? { x: bw * 0.38, y: bh * 0.85 };
-        by.leftLeg.position.set(hip.x - bw / 2, hip.y - bh / 2);
+      if (by.leftLeg) {
+        atLimbEnd('leftLeg', () => {
+          if (parts.leftLegContainer) by.leftLeg!.position.copyFrom(parts.leftLegContainer.position);
+          else {
+            const hip = config.body.hipL ?? { x: bw * 0.38, y: bh * 0.85 };
+            by.leftLeg!.position.set(hip.x - bw / 2, hip.y - bh / 2);
+          }
+        });
       }
-      if (by.rightLeg && parts.rightLegContainer) {
-        by.rightLeg.position.copyFrom(parts.rightLegContainer.position);
-      } else if (by.rightLeg) {
-        const hip = config.body.hipR ?? { x: bw * 0.62, y: bh * 0.85 };
-        by.rightLeg.position.set(hip.x - bw / 2, hip.y - bh / 2);
+      if (by.rightLeg) {
+        atLimbEnd('rightLeg', () => {
+          if (parts.rightLegContainer) by.rightLeg!.position.copyFrom(parts.rightLegContainer.position);
+          else {
+            const hip = config.body.hipR ?? { x: bw * 0.62, y: bh * 0.85 };
+            by.rightLeg!.position.set(hip.x - bw / 2, hip.y - bh / 2);
+          }
+        });
       }
       return;
     }
@@ -557,6 +583,68 @@ export class PuppetRenderer {
     if (by.rightArm) by.rightArm.position.set(end('rightArm').x, end('rightArm').y);
     if (by.leftLeg) by.leftLeg.position.set(end('leftLeg').x, end('leftLeg').y);
     if (by.rightLeg) by.rightLeg.position.set(end('rightLeg').x, end('rightLeg').y);
+  }
+
+  /** Returns the IK-enabled limb sprites + geometry for a rig part, or null. */
+  private rigLimb(
+    parts: RigRenderParts,
+    part: 'leftArm' | 'rightArm' | 'leftLeg' | 'rightLeg'
+  ): { upper: Sprite; lower: Sprite; ik: RigLimbIK } | null {
+    const ik =
+      part === 'leftArm'
+        ? parts.leftArmIK
+        : part === 'rightArm'
+          ? parts.rightArmIK
+          : part === 'leftLeg'
+            ? parts.leftLegIK
+            : parts.rightLegIK;
+    const lower =
+      part === 'leftArm'
+        ? parts.leftArmLower
+        : part === 'rightArm'
+          ? parts.rightArmLower
+          : part === 'leftLeg'
+            ? parts.leftLegLower
+            : parts.rightLegLower;
+    const upper =
+      part === 'leftArm'
+        ? parts.leftArmSprite
+        : part === 'rightArm'
+          ? parts.rightArmSprite
+          : part === 'leftLeg'
+            ? parts.leftLegSprite
+            : parts.rightLegSprite;
+    if (!ik || !lower || !upper) return null;
+    return { upper, lower, ik };
+  }
+
+  /**
+   * Poses a two-bone IK limb toward a target (image px, root joint at origin).
+   * The upper rotation is clamped around the rest direction by maxArmDelta; the
+   * bend is clamped so limbs never fold inside-out.
+   */
+  private poseRigLimb(
+    upper: Sprite,
+    lower: Sprite,
+    ik: RigLimbIK,
+    restAbs: number,
+    maxDelta: number,
+    target: Point2D
+  ): void {
+    const pose = solveTwoBoneIK(target, ik.len1, ik.len2, ik.bendSign);
+    const a1 = restAbs + clamp(shortestAngleDelta(pose.angle1, restAbs), -maxDelta, maxDelta);
+    upper.rotation = a1 - ik.phi1;
+    const bend = clamp(pose.angle2, -MAX_LIMB_BEND, MAX_LIMB_BEND);
+    lower.rotation = bend - ik.phi2 + ik.phi1;
+  }
+
+  /** World position of a rig limb's hand/foot (end of the lower segment). */
+  private limbEndWorld(parts: RigRenderParts, part: 'leftArm' | 'rightArm' | 'leftLeg' | 'rightLeg'): Point2D | null {
+    const limb = this.rigLimb(parts, part);
+    if (!limb) return null;
+    const handLocal = { x: Math.cos(limb.ik.phi2) * limb.ik.len2, y: Math.sin(limb.ik.phi2) * limb.ik.len2 };
+    const world = limb.lower.toGlobal(handLocal);
+    return { x: world.x, y: world.y };
   }
 
   /** Re-poses and rebuilds handles for a puppet that was just (re)built while
@@ -644,10 +732,17 @@ export class PuppetRenderer {
             : part === 'leftLeg'
               ? (config.leftLeg?.restAngle ?? 0) + Math.PI / 2
               : (config.rightLeg?.restAngle ?? 0) + Math.PI / 2;
-      const next = sprite.rotation + delta;
-      const lo = rest - puppet.rig.maxArmDelta;
-      const hi = rest + puppet.rig.maxArmDelta;
-      sprite.rotation = Math.max(lo, Math.min(hi, next));
+      const ik = this.rigLimb(parts, part as 'leftArm' | 'rightArm' | 'leftLeg' | 'rightLeg');
+      if (ik) {
+        const base = rest - ik.ik.phi1;
+        ik.upper.rotation = Math.max(base - puppet.rig.maxArmDelta, Math.min(base + puppet.rig.maxArmDelta, ik.upper.rotation + delta));
+        ik.lower.rotation = -ik.ik.phi2 + ik.ik.phi1;
+      } else {
+        const next = sprite.rotation + delta;
+        const lo = rest - puppet.rig.maxArmDelta;
+        const hi = rest + puppet.rig.maxArmDelta;
+        sprite.rotation = Math.max(lo, Math.min(hi, next));
+      }
       return;
     }
 
@@ -760,7 +855,15 @@ export class PuppetRenderer {
             : drag.part === 'leftLeg'
               ? (config.leftLeg?.restAngle ?? 0) + Math.PI / 2
               : (config.rightLeg?.restAngle ?? 0) + Math.PI / 2;
-      sprite.rotation = armRotation(local, rest, puppet.rig.maxArmDelta);
+      const ik = this.rigLimb(parts, drag.part as 'leftArm' | 'rightArm' | 'leftLeg' | 'rightLeg');
+      if (ik) {
+        const totalLen = ik.ik.len1 + ik.ik.len2;
+        const dist = Math.hypot(local.x, local.y);
+        const target = dist > totalLen ? { x: (local.x / dist) * totalLen, y: (local.y / dist) * totalLen } : local;
+        this.poseRigLimb(ik.upper, ik.lower, ik.ik, rest, puppet.rig.maxArmDelta, target);
+      } else {
+        sprite.rotation = armRotation(local, rest, puppet.rig.maxArmDelta);
+      }
       return;
     }
 
@@ -1091,6 +1194,10 @@ export class PuppetRenderer {
           rightArm: parts.rightArmSprite.rotation,
           leftLeg: parts.leftLegSprite?.rotation,
           rightLeg: parts.rightLegSprite?.rotation,
+          leftArmLower: parts.leftArmLower?.rotation,
+          rightArmLower: parts.rightArmLower?.rotation,
+          leftLegLower: parts.leftLegLower?.rotation,
+          rightLegLower: parts.rightLegLower?.rotation,
         };
         if (parts.headContainer) {
           snap.headPosition = { x: parts.headContainer.position.x, y: parts.headContainer.position.y };
@@ -1130,6 +1237,10 @@ export class PuppetRenderer {
           if (snap.rigRotations.rightArm !== undefined) parts.rightArmSprite.rotation = snap.rigRotations.rightArm;
           if (parts.leftLegSprite && snap.rigRotations.leftLeg !== undefined) parts.leftLegSprite.rotation = snap.rigRotations.leftLeg;
           if (parts.rightLegSprite && snap.rigRotations.rightLeg !== undefined) parts.rightLegSprite.rotation = snap.rigRotations.rightLeg;
+          if (parts.leftArmLower && snap.rigRotations.leftArmLower !== undefined) parts.leftArmLower.rotation = snap.rigRotations.leftArmLower;
+          if (parts.rightArmLower && snap.rigRotations.rightArmLower !== undefined) parts.rightArmLower.rotation = snap.rigRotations.rightArmLower;
+          if (parts.leftLegLower && snap.rigRotations.leftLegLower !== undefined) parts.leftLegLower.rotation = snap.rigRotations.leftLegLower;
+          if (parts.rightLegLower && snap.rigRotations.rightLegLower !== undefined) parts.rightLegLower.rotation = snap.rigRotations.rightLegLower;
         }
         if (parts.headContainer && snap.headPosition) {
           parts.headContainer.position.set(snap.headPosition.x, snap.headPosition.y);
@@ -1197,7 +1308,7 @@ export class PuppetRenderer {
       // update must not overwrite the drag.
       if (this.activeDrag && this.activeDrag.puppet === puppet) return;
 
-      const { config, parts, maxArmDelta } = puppet.rig;
+      const { config, parts, maxArmDelta, scale } = puppet.rig;
       const bw = parts.bodySprite.texture.width;
       const bh = parts.bodySprite.texture.height;
 
@@ -1215,8 +1326,36 @@ export class PuppetRenderer {
       const deltaL = clamp((armRotL - restL) * spread, -maxArmDelta, maxArmDelta);
       const deltaR = clamp((armRotR - restR) * spread, -maxArmDelta, maxArmDelta);
 
-      if (config.parts.leftArm.movable) parts.leftArmSprite.rotation = restL + deltaL;
-      if (config.parts.rightArm.movable) parts.rightArmSprite.rotation = restR + deltaR;
+      const armTarget = (limbKey: 'leftArm' | 'rightArm', restAbs: number): Point2D => {
+        const limb = this.rigLimb(parts, limbKey);
+        const v = state.limbs[limbKey];
+        const mag = Math.hypot(v.x, v.y);
+        const totalLen = limb ? limb.ik.len1 + limb.ik.len2 : 130;
+        const dir = mag < 1e-4 ? restAbs : Math.atan2(v.y, v.x);
+        const targetLen = Math.min(mag / scale, totalLen);
+        // Short reaches (fist) tuck the hand toward the resting hang instead of
+        // pointing the whole arm sideways, so the elbow bend does the work.
+        const tuck = Math.max(0, 1 - targetLen / totalLen) * 0.6;
+        const finalDir = dir + shortestAngleDelta(restAbs, dir) * tuck;
+        return { x: Math.cos(finalDir) * targetLen, y: Math.sin(finalDir) * targetLen };
+      };
+
+      if (config.parts.leftArm.movable) {
+        const ik = this.rigLimb(parts, 'leftArm');
+        if (ik) {
+          this.poseRigLimb(ik.upper, ik.lower, ik.ik, restL, maxArmDelta, armTarget('leftArm', restL));
+        } else {
+          parts.leftArmSprite.rotation = restL + deltaL;
+        }
+      }
+      if (config.parts.rightArm.movable) {
+        const ik = this.rigLimb(parts, 'rightArm');
+        if (ik) {
+          this.poseRigLimb(ik.upper, ik.lower, ik.ik, restR, maxArmDelta, armTarget('rightArm', restR));
+        } else {
+          parts.rightArmSprite.rotation = restR + deltaR;
+        }
+      }
 
       // Legs swing opposite to the same-side arm for a walking look, plus an
       // A-frame stance when the fingers are spread (spread palms = split).
@@ -1224,14 +1363,44 @@ export class PuppetRenderer {
         const hipL = config.body.hipL ?? { x: bw * 0.38, y: bh * 0.85 };
         parts.leftLegContainer.position.set(hipL.x - bw / 2, hipL.y - bh / 2);
         if (config.parts.leftLeg?.movable) {
-          parts.leftLegSprite.rotation = config.leftLeg.restAngle - 0.5 * deltaL - 0.35 * state.fingerSplay;
+          const ik = this.rigLimb(parts, 'leftLeg');
+          const restAbs = (config.leftLeg?.restAngle ?? 0) + Math.PI / 2;
+          if (ik) {
+            const v = state.limbs.leftLeg;
+            const mag = Math.hypot(v.x, v.y);
+            const totalLen = ik.ik.len1 + ik.ik.len2;
+            const swing = clamp(Math.atan2(v.y, v.x) - Math.PI / 2, -0.7, 0.7) * 0.5;
+            const dir = Math.PI / 2 + 0.35 * state.fingerSplay + swing;
+            const targetLen = Math.min(Math.max(mag / scale, totalLen * 0.9), totalLen);
+            this.poseRigLimb(ik.upper, ik.lower, ik.ik, restAbs, maxArmDelta, {
+              x: Math.cos(dir) * targetLen,
+              y: Math.sin(dir) * targetLen,
+            });
+          } else {
+            parts.leftLegSprite.rotation = config.leftLeg.restAngle - 0.5 * deltaL - 0.35 * state.fingerSplay;
+          }
         }
       }
       if (parts.rightLegContainer && config.rightLeg && parts.rightLegSprite) {
         const hipR = config.body.hipR ?? { x: bw * 0.62, y: bh * 0.85 };
         parts.rightLegContainer.position.set(hipR.x - bw / 2, hipR.y - bh / 2);
         if (config.parts.rightLeg?.movable) {
-          parts.rightLegSprite.rotation = config.rightLeg.restAngle - 0.5 * deltaR + 0.35 * state.fingerSplay;
+          const ik = this.rigLimb(parts, 'rightLeg');
+          const restAbs = (config.rightLeg?.restAngle ?? 0) + Math.PI / 2;
+          if (ik) {
+            const v = state.limbs.rightLeg;
+            const mag = Math.hypot(v.x, v.y);
+            const totalLen = ik.ik.len1 + ik.ik.len2;
+            const swing = clamp(Math.atan2(v.y, v.x) - Math.PI / 2, -0.7, 0.7) * 0.5;
+            const dir = Math.PI / 2 - 0.35 * state.fingerSplay + swing;
+            const targetLen = Math.min(Math.max(mag / scale, totalLen * 0.9), totalLen);
+            this.poseRigLimb(ik.upper, ik.lower, ik.ik, restAbs, maxArmDelta, {
+              x: Math.cos(dir) * targetLen,
+              y: Math.sin(dir) * targetLen,
+            });
+          } else {
+            parts.rightLegSprite.rotation = config.rightLeg.restAngle - 0.5 * deltaR + 0.35 * state.fingerSplay;
+          }
         }
       }
 
