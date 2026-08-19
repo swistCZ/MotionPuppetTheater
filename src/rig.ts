@@ -15,31 +15,34 @@ export interface RigPartFile {
   movable?: boolean;
 }
 
-export interface RigArmDef {
-  /** Shoulder joint in arm-image coordinates (px from top-left). */
+/** An upper limb part (upper arm / thigh): joint pivot + where the lower part attaches. */
+export interface RigLimbUpperDef {
+  /** Shoulder/hip joint in the upper-limb image coordinates (px from top-left). */
   pivot: Point;
-  /** Radians; the arm's resting pointing direction (y-down coords), typically ~90 deg (hanging down). */
-  restHandAngle: number;
   /**
-   * Elbow joint in arm-image coordinates, below the pivot (elbow.y > pivot.y).
-   * When present, the arm is split into upper/lower segments and posed via
-   * two-bone inverse kinematics; when absent it rotates as a single rigid limb.
+   * Joint point (elbow/knee) in the upper-limb image coordinates where the
+   * lower part (forearm/shin) attaches. Auto-centered on the upper limb's
+   * joint end in the builder; adjust it only when the artwork is not a
+   * straight rod. Must lie below the pivot.
    */
-  elbow?: Point;
+  attach: Point;
 }
 
-/** A rotating limb (leg): hip pivot + resting angle in radians. */
-export interface RigLimbDef {
-  /** Hip joint in leg-image coordinates (px from top-left). */
-  pivot: Point;
+export interface RigArmDef extends RigLimbUpperDef {
+  /** Radians; the arm's resting pointing direction (y-down coords), typically ~90 deg (hanging down). */
+  restHandAngle: number;
+}
+
+/** A rotating leg (thigh): hip pivot + resting angle in radians. */
+export interface RigLimbDef extends RigLimbUpperDef {
   /** Radians; the leg's resting angle (0 = straight down). */
   restAngle: number;
-  /**
-   * Knee joint in leg-image coordinates, below the pivot (knee.y > pivot.y).
-   * When present, the leg is split into thigh/shin segments and posed via
-   * two-bone inverse kinematics; when absent it rotates as a single rigid limb.
-   */
-  knee?: Point;
+}
+
+/** A lower limb part (forearm / shin): pivots at the elbow/knee joint. */
+export interface RigLowerLimbDef {
+  /** Elbow/knee joint pivot in the lower-limb image coordinates (px from top-left). */
+  pivot: Point;
 }
 
 /** Precomputed two-bone IK geometry for one limb in image-pixel space. */
@@ -106,10 +109,18 @@ export interface CutoutRigConfig {
   parts: {
     body: RigPartFile;
     head?: RigPartFile;
+    /** Upper arm (shoulder → elbow). */
     leftArm: RigPartFile;
     rightArm: RigPartFile;
+    /** Lower arm (elbow → hand). When present the arm bends via two-bone IK. */
+    leftForearm?: RigPartFile;
+    rightForearm?: RigPartFile;
+    /** Thigh (hip → knee). */
     leftLeg?: RigPartFile;
     rightLeg?: RigPartFile;
+    /** Shin (knee → foot). When present the leg bends via two-bone IK. */
+    leftShin?: RigPartFile;
+    rightShin?: RigPartFile;
   };
   body: {
     /** Shoulder anchors in body-image coordinates (px from top-left). */
@@ -122,8 +133,12 @@ export interface CutoutRigConfig {
   };
   leftArm: RigArmDef;
   rightArm: RigArmDef;
+  leftForearm?: RigLowerLimbDef;
+  rightForearm?: RigLowerLimbDef;
   leftLeg?: RigLimbDef;
   rightLeg?: RigLimbDef;
+  leftShin?: RigLowerLimbDef;
+  rightShin?: RigLowerLimbDef;
   head?: RigHeadDef;
 }
 
@@ -133,8 +148,12 @@ export type RigDimensions = {
   head?: Point;
   leftArm: Point;
   rightArm: Point;
+  leftForearm?: Point;
+  rightForearm?: Point;
   leftLeg?: Point;
   rightLeg?: Point;
+  leftShin?: Point;
+  rightShin?: Point;
 };
 
 /**
@@ -157,26 +176,40 @@ export function validateRigConfig(config: CutoutRigConfig, dimensions?: RigDimen
     }
   };
 
-  const checkLimb = (name: string, def: { pivot?: Point; elbow?: Point; knee?: Point } | undefined, dim: Point | undefined): void => {
+  const checkLimb = (
+    name: string,
+    def: { pivot?: Point; attach?: Point } | undefined,
+    dim: Point | undefined
+  ): void => {
     if (!def) {
       errors.push(`chybí ${name}`);
       return;
     }
     checkPointIn(`${name}.pivot`, def.pivot, dim);
-    const joint = def.elbow ?? def.knee;
-    if (joint) {
-      checkPointIn(`${name}.${def.elbow ? 'elbow' : 'knee'}`, joint, dim);
-      if (def.pivot && joint.y <= def.pivot.y) {
-        errors.push(`${name}.${def.elbow ? 'elbow' : 'knee'} musí být níž než pivot`);
-      }
+    checkPointIn(`${name}.attach`, def.attach, dim);
+    if (def.pivot && def.attach && def.attach.y <= def.pivot.y) {
+      errors.push(`${name}.attach musí být níž než pivot`);
     }
   };
+
+  const checkLowerLimb = (name: string, def: { pivot?: Point } | undefined, dim: Point | undefined): void => {
+    if (!def) {
+      errors.push(`chybí ${name}`);
+      return;
+    }
+    checkPointIn(`${name}.pivot`, def.pivot, dim);
+  };
+
   checkLimb('leftArm', config.leftArm, dimensions?.leftArm);
   checkLimb('rightArm', config.rightArm, dimensions?.rightArm);
 
   // Optional parts are validated only when present.
+  if (config.parts?.leftForearm || config.leftForearm) checkLowerLimb('leftForearm', config.leftForearm, dimensions?.leftForearm);
+  if (config.parts?.rightForearm || config.rightForearm) checkLowerLimb('rightForearm', config.rightForearm, dimensions?.rightForearm);
   if (config.parts?.leftLeg || config.leftLeg) checkLimb('leftLeg', config.leftLeg, dimensions?.leftLeg);
   if (config.parts?.rightLeg || config.rightLeg) checkLimb('rightLeg', config.rightLeg, dimensions?.rightLeg);
+  if (config.parts?.leftShin || config.leftShin) checkLowerLimb('leftShin', config.leftShin, dimensions?.leftShin);
+  if (config.parts?.rightShin || config.rightShin) checkLowerLimb('rightShin', config.rightShin, dimensions?.rightShin);
 
   if (dimensions?.body) {
     const b = config.body;

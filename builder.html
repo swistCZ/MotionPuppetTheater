@@ -167,6 +167,7 @@
       .modebar { display: grid; gap: 6px; }
       .modebar.cols-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
       .modebar.cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .modebar.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
       .modebar button {
         height: 26px;
         padding: 0 4px;
@@ -314,7 +315,7 @@
             <div class="dropzone" id="dz-leftArm">
               <label class="dz-main">
                 <span class="dz-label">Levá paže</span>
-                <span class="dz-sub">Samostatná paže</span>
+                <span class="dz-sub">Nadloktí: rameno → loket</span>
                 <span class="dz-thumb"></span>
                 <input type="file" id="file-leftArm" accept="image/png,image/jpeg,image/svg+xml,image/webp" />
               </label>
@@ -331,7 +332,7 @@
             <div class="dropzone" id="dz-rightArm">
               <label class="dz-main">
                 <span class="dz-label">Pravá paže</span>
-                <span class="dz-sub">Samostatná paže</span>
+                <span class="dz-sub">Nadloktí: rameno → loket</span>
                 <span class="dz-thumb"></span>
                 <input type="file" id="file-rightArm" accept="image/png,image/jpeg,image/svg+xml,image/webp" />
               </label>
@@ -345,10 +346,34 @@
               </div>
             </div>
 
+            <div class="dropzone" id="dz-leftForearm">
+              <label class="dz-main">
+                <span class="dz-label">Levé předloktí</span>
+                <span class="dz-sub">Loket → ruka (volitelné)</span>
+                <span class="dz-thumb"></span>
+                <input type="file" id="file-leftForearm" accept="image/png,image/jpeg,image/svg+xml,image/webp" />
+              </label>
+              <div class="dz-footer">
+                <span class="tag">Ohýbá se v lokti</span>
+              </div>
+            </div>
+
+            <div class="dropzone" id="dz-rightForearm">
+              <label class="dz-main">
+                <span class="dz-label">Pravé předloktí</span>
+                <span class="dz-sub">Loket → ruka (volitelné)</span>
+                <span class="dz-thumb"></span>
+                <input type="file" id="file-rightForearm" accept="image/png,image/jpeg,image/svg+xml,image/webp" />
+              </label>
+              <div class="dz-footer">
+                <span class="tag">Ohýbá se v lokti</span>
+              </div>
+            </div>
+
             <div class="dropzone" id="dz-leftLeg">
               <label class="dz-main">
                 <span class="dz-label">Levá noha</span>
-                <span class="dz-sub">Samostatná noha (volitelné)</span>
+                <span class="dz-sub">Stehno: kyčel → koleno (volitelné)</span>
                 <span class="dz-thumb"></span>
                 <input type="file" id="file-leftLeg" accept="image/png,image/jpeg,image/svg+xml,image/webp" />
               </label>
@@ -365,7 +390,7 @@
             <div class="dropzone" id="dz-rightLeg">
               <label class="dz-main">
                 <span class="dz-label">Pravá noha</span>
-                <span class="dz-sub">Samostatná noha (volitelné)</span>
+                <span class="dz-sub">Stehno: kyčel → koleno (volitelné)</span>
                 <span class="dz-thumb"></span>
                 <input type="file" id="file-rightLeg" accept="image/png,image/jpeg,image/svg+xml,image/webp" />
               </label>
@@ -376,6 +401,30 @@
                   <span class="track"></span>
                   <span class="switch-label">Pohyblivá</span>
                 </label>
+              </div>
+            </div>
+
+            <div class="dropzone" id="dz-leftShin">
+              <label class="dz-main">
+                <span class="dz-label">Levá holeň</span>
+                <span class="dz-sub">Koleno → chodidlo (volitelné)</span>
+                <span class="dz-thumb"></span>
+                <input type="file" id="file-leftShin" accept="image/png,image/jpeg,image/svg+xml,image/webp" />
+              </label>
+              <div class="dz-footer">
+                <span class="tag">Ohýbá se v koleni</span>
+              </div>
+            </div>
+
+            <div class="dropzone" id="dz-rightShin">
+              <label class="dz-main">
+                <span class="dz-label">Pravá holeň</span>
+                <span class="dz-sub">Koleno → chodidlo (volitelné)</span>
+                <span class="dz-thumb"></span>
+                <input type="file" id="file-rightShin" accept="image/png,image/jpeg,image/svg+xml,image/webp" />
+              </label>
+              <div class="dz-footer">
+                <span class="tag">Ohýbá se v koleni</span>
               </div>
             </div>
           </div>
@@ -452,20 +501,24 @@
           </div>
           <div class="joint-group">
             <span class="joint-label">Paže</span>
-            <div class="modebar cols-2">
+            <div class="modebar cols-3">
               <button data-mode="pivotL">Pivot L</button>
               <button data-mode="pivotR">Pivot P</button>
               <button data-mode="elbowL">Loket L</button>
               <button data-mode="elbowR">Loket P</button>
+              <button data-mode="forearmL">Předloktí L</button>
+              <button data-mode="forearmR">Předloktí P</button>
             </div>
           </div>
           <div class="joint-group">
             <span class="joint-label">Nohy</span>
-            <div class="modebar cols-2">
+            <div class="modebar cols-3">
               <button data-mode="legPivotL">Pivot L</button>
               <button data-mode="legPivotR">Pivot P</button>
               <button data-mode="kneeL">Koleno L</button>
               <button data-mode="kneeR">Koleno P</button>
+              <button data-mode="shinL">Holeň L</button>
+              <button data-mode="shinR">Holeň P</button>
             </div>
           </div>
 

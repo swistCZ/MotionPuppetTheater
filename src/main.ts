@@ -146,6 +146,8 @@ class AppManager {
   private async init(stageContainer: HTMLElement): Promise<void> {
     await this.renderer.initialize(stageContainer);
 
+    ;(window as unknown as { __mptDebug?: unknown }).__mptDebug = this.renderer;
+
     this.resizeCanvas();
     const stage = document.getElementById('pixi-viewport') as HTMLElement;
     this.renderer.resize(stage.clientWidth || window.innerWidth, stage.clientHeight || window.innerHeight);

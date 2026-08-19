@@ -1,7 +1,7 @@
 import { CutoutRigConfig, Point, RigDimensions, RigPartFile, validateRigConfig } from './rig';
 import { saveLocalCharacter } from './rigAssets';
 
-type PartKey = 'body' | 'head' | 'leftArm' | 'rightArm' | 'leftLeg' | 'rightLeg';
+type PartKey = 'body' | 'head' | 'leftArm' | 'rightArm' | 'leftLeg' | 'rightLeg' | 'leftForearm' | 'rightForearm' | 'leftShin' | 'rightShin';
 type Mode =
   | 'shoulderL'
   | 'shoulderR'
@@ -14,13 +14,28 @@ type Mode =
   | 'legPivotR'
   | 'elbowL'
   | 'elbowR'
+  | 'forearmL'
+  | 'forearmR'
   | 'kneeL'
-  | 'kneeR';
+  | 'kneeR'
+  | 'shinL'
+  | 'shinR';
 
-const ALL_PARTS: PartKey[] = ['body', 'head', 'leftArm', 'rightArm', 'leftLeg', 'rightLeg'];
+const ALL_PARTS: PartKey[] = [
+  'body',
+  'head',
+  'leftArm',
+  'rightArm',
+  'leftForearm',
+  'rightForearm',
+  'leftLeg',
+  'rightLeg',
+  'leftShin',
+  'rightShin',
+];
 const MOVABLE_PARTS: PartKey[] = ['head', 'leftArm', 'rightArm', 'leftLeg', 'rightLeg'];
 const REQUIRED_PARTS: PartKey[] = ['body', 'leftArm', 'rightArm'];
-const OPTIONAL_PARTS: PartKey[] = ['head', 'leftLeg', 'rightLeg'];
+const OPTIONAL_PARTS: PartKey[] = ['head', 'leftForearm', 'rightForearm', 'leftLeg', 'rightLeg', 'leftShin', 'rightShin'];
 
 interface LoadedPart {
   img: HTMLImageElement;
@@ -31,14 +46,27 @@ interface LoadedPart {
   height: number;
 }
 
+/** Config shape as imported, including legacy elbow/knee fields from configs
+ * authored before the split-limb model. */
+type LegacyRigConfig = CutoutRigConfig & {
+  leftArm?: CutoutRigConfig['leftArm'] & { elbow?: Point };
+  rightArm?: CutoutRigConfig['rightArm'] & { elbow?: Point };
+  leftLeg?: CutoutRigConfig['leftLeg'] & { knee?: Point };
+  rightLeg?: CutoutRigConfig['rightLeg'] & { knee?: Point };
+};
+
 /** Working copy of the config with all optional joints present. */
 interface WorkingConfig extends CutoutRigConfig {
   body: CutoutRigConfig['body'] & { neck: Point; hipL: Point; hipR: Point };
-  leftLeg: NonNullable<CutoutRigConfig['leftLeg']> & { knee: Point };
-  rightLeg: NonNullable<CutoutRigConfig['rightLeg']> & { knee: Point };
+  leftArm: CutoutRigConfig['leftArm'] & { attach: Point };
+  rightArm: CutoutRigConfig['rightArm'] & { attach: Point };
+  leftForearm: { pivot: Point };
+  rightForearm: { pivot: Point };
+  leftLeg: NonNullable<CutoutRigConfig['leftLeg']> & { attach: Point };
+  rightLeg: NonNullable<CutoutRigConfig['rightLeg']> & { attach: Point };
+  leftShin: { pivot: Point };
+  rightShin: { pivot: Point };
   head: NonNullable<CutoutRigConfig['head']>;
-  leftArm: CutoutRigConfig['leftArm'] & { elbow: Point };
-  rightArm: CutoutRigConfig['rightArm'] & { elbow: Point };
 }
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id.replace(/^#/, '')) as T;
@@ -56,8 +84,12 @@ const cfg: WorkingConfig = {
     head: { src: '' },
     leftArm: { src: '' },
     rightArm: { src: '' },
+    leftForearm: { src: '' },
+    rightForearm: { src: '' },
     leftLeg: { src: '' },
     rightLeg: { src: '' },
+    leftShin: { src: '' },
+    rightShin: { src: '' },
   },
   body: {
     shoulderL: { x: 0, y: 0 },
@@ -66,10 +98,14 @@ const cfg: WorkingConfig = {
     hipL: { x: 0, y: 0 },
     hipR: { x: 0, y: 0 },
   },
-  leftArm: { pivot: { x: 0, y: 0 }, restHandAngle: Math.PI / 2, elbow: { x: 0, y: 0 } },
-  rightArm: { pivot: { x: 0, y: 0 }, restHandAngle: Math.PI / 2, elbow: { x: 0, y: 0 } },
-  leftLeg: { pivot: { x: 0, y: 0 }, restAngle: 0, knee: { x: 0, y: 0 } },
-  rightLeg: { pivot: { x: 0, y: 0 }, restAngle: 0, knee: { x: 0, y: 0 } },
+  leftArm: { pivot: { x: 0, y: 0 }, restHandAngle: Math.PI / 2, attach: { x: 0, y: 0 } },
+  rightArm: { pivot: { x: 0, y: 0 }, restHandAngle: Math.PI / 2, attach: { x: 0, y: 0 } },
+  leftForearm: { pivot: { x: 0, y: 0 } },
+  rightForearm: { pivot: { x: 0, y: 0 } },
+  leftLeg: { pivot: { x: 0, y: 0 }, restAngle: 0, attach: { x: 0, y: 0 } },
+  rightLeg: { pivot: { x: 0, y: 0 }, restAngle: 0, attach: { x: 0, y: 0 } },
+  leftShin: { pivot: { x: 0, y: 0 } },
+  rightShin: { pivot: { x: 0, y: 0 } },
   head: { bob: 1 },
 };
 
@@ -233,7 +269,13 @@ function applyDefaults(key: PartKey): void {
       const arm = key === 'leftArm' ? cfg.leftArm : cfg.rightArm;
       arm.pivot = { x: round(p.width / 2), y: Math.max(round(b.t + 4), 0) };
       arm.restHandAngle = Math.atan2(b.cy - arm.pivot.y, b.cx - arm.pivot.x);
-      arm.elbow = { x: round(b.cx), y: Math.max(round(b.t + b.h * 0.5), arm.pivot.y + 4) };
+      arm.attach = { x: round(b.l + b.w / 2), y: round(b.t + b.h) };
+      break;
+    }
+    case 'leftForearm':
+    case 'rightForearm': {
+      const fa = key === 'leftForearm' ? cfg.leftForearm : cfg.rightForearm;
+      fa.pivot = { x: round(b.l + b.w / 2), y: round(b.t) };
       break;
     }
     case 'leftLeg':
@@ -241,7 +283,13 @@ function applyDefaults(key: PartKey): void {
       const leg = key === 'leftLeg' ? cfg.leftLeg : cfg.rightLeg;
       leg.pivot = { x: round(p.width / 2), y: Math.max(round(b.t + 4), 0) };
       leg.restAngle = 0;
-      leg.knee = { x: round(b.cx), y: Math.max(round(b.t + b.h * 0.45), leg.pivot.y + 4) };
+      leg.attach = { x: round(b.l + b.w / 2), y: round(b.t + b.h) };
+      break;
+    }
+    case 'leftShin':
+    case 'rightShin': {
+      const sh = key === 'leftShin' ? cfg.leftShin : cfg.rightShin;
+      sh.pivot = { x: round(b.l + b.w / 2), y: round(b.t) };
       break;
     }
     case 'head':
@@ -249,25 +297,39 @@ function applyDefaults(key: PartKey): void {
   }
 }
 
-/** Fills sensible elbow/knee defaults for any limb that still has a (0,0)
- * joint (e.g. configs imported before two-bone IK existed). */
+/** Fills sensible joint defaults for any limb that still has a (0,0) attach or
+ * pivot (e.g. configs imported before the split-limb model existed). */
 function ensureLimbJoints(): void {
-  for (const key of ['leftArm', 'rightArm'] as const) {
+  const upperKey = (key: 'leftArm' | 'rightArm' | 'leftLeg' | 'rightLeg'): 'leftForearm' | 'rightForearm' | 'leftShin' | 'rightShin' =>
+    key === 'leftArm' ? 'leftForearm' : key === 'rightArm' ? 'rightForearm' : key === 'leftLeg' ? 'leftShin' : 'rightShin';
+  for (const key of ['leftArm', 'rightArm', 'leftLeg', 'rightLeg'] as const) {
     const p = parts[key];
     if (!p) continue;
-    const arm = key === 'leftArm' ? cfg.leftArm : cfg.rightArm;
-    if (arm.elbow.x === 0 && arm.elbow.y === 0) {
+    const def =
+      key === 'leftArm'
+        ? cfg.leftArm
+        : key === 'rightArm'
+          ? cfg.rightArm
+          : key === 'leftLeg'
+            ? cfg.leftLeg
+            : cfg.rightLeg;
+    if (def.attach.x === 0 && def.attach.y === 0) {
       const b = opaqueBounds(p.canvas);
-      arm.elbow = { x: round(b.cx), y: Math.max(round(b.t + b.h * 0.5), arm.pivot.y + 4) };
+      def.attach = { x: round(b.l + b.w / 2), y: round(b.t + b.h) };
     }
-  }
-  for (const key of ['leftLeg', 'rightLeg'] as const) {
-    const p = parts[key];
-    if (!p) continue;
-    const leg = key === 'leftLeg' ? cfg.leftLeg : cfg.rightLeg;
-    if (leg.knee.x === 0 && leg.knee.y === 0) {
-      const b = opaqueBounds(p.canvas);
-      leg.knee = { x: round(b.cx), y: Math.max(round(b.t + b.h * 0.45), leg.pivot.y + 4) };
+    const lowerKey = upperKey(key);
+    const lp = parts[lowerKey];
+    const ldef =
+      lowerKey === 'leftForearm'
+        ? cfg.leftForearm
+        : lowerKey === 'rightForearm'
+          ? cfg.rightForearm
+          : lowerKey === 'leftShin'
+            ? cfg.leftShin
+            : cfg.rightShin;
+    if (lp && ldef.pivot.x === 0 && ldef.pivot.y === 0) {
+      const b = opaqueBounds(lp.canvas);
+      ldef.pivot = { x: round(b.l + b.w / 2), y: round(b.t) };
     }
   }
 }
@@ -307,9 +369,9 @@ function syncFromCfg(): void {
 }
 
 async function importConfig(file: File): Promise<void> {
-  let json: CutoutRigConfig;
+  let json: LegacyRigConfig;
   try {
-    json = JSON.parse(await file.text());
+    json = JSON.parse(await file.text()) as LegacyRigConfig;
   } catch {
     $<HTMLDivElement>('export-warn').textContent = 'Soubor není platný JSON.';
     return;
@@ -332,27 +394,51 @@ async function importConfig(file: File): Promise<void> {
   cfg.leftArm = {
     pivot: { ...json.leftArm.pivot },
     restHandAngle: json.leftArm.restHandAngle ?? Math.PI / 2,
-    elbow: json.leftArm.elbow ? { ...json.leftArm.elbow } : { ...cfg.leftArm.elbow },
+    attach: json.leftArm.attach
+      ? { ...json.leftArm.attach }
+      : json.leftArm.elbow
+        ? { ...json.leftArm.elbow }
+        : { ...cfg.leftArm.attach },
   };
   cfg.rightArm = {
     pivot: { ...json.rightArm.pivot },
     restHandAngle: json.rightArm.restHandAngle ?? Math.PI / 2,
-    elbow: json.rightArm.elbow ? { ...json.rightArm.elbow } : { ...cfg.rightArm.elbow },
+    attach: json.rightArm.attach
+      ? { ...json.rightArm.attach }
+      : json.rightArm.elbow
+        ? { ...json.rightArm.elbow }
+        : { ...cfg.rightArm.attach },
   };
+  cfg.leftForearm = json.leftForearm
+    ? { pivot: { ...json.leftForearm.pivot } }
+    : { ...cfg.leftForearm };
+  cfg.rightForearm = json.rightForearm
+    ? { pivot: { ...json.rightForearm.pivot } }
+    : { ...cfg.rightForearm };
   cfg.leftLeg = json.leftLeg
     ? {
         pivot: { ...json.leftLeg.pivot },
         restAngle: json.leftLeg.restAngle ?? 0,
-        knee: json.leftLeg.knee ? { ...json.leftLeg.knee } : { ...cfg.leftLeg.knee },
+        attach: json.leftLeg.attach
+          ? { ...json.leftLeg.attach }
+          : json.leftLeg.knee
+            ? { ...json.leftLeg.knee }
+            : { ...cfg.leftLeg.attach },
       }
     : cfg.leftLeg;
   cfg.rightLeg = json.rightLeg
     ? {
         pivot: { ...json.rightLeg.pivot },
         restAngle: json.rightLeg.restAngle ?? 0,
-        knee: json.rightLeg.knee ? { ...json.rightLeg.knee } : { ...cfg.rightLeg.knee },
+        attach: json.rightLeg.attach
+          ? { ...json.rightLeg.attach }
+          : json.rightLeg.knee
+            ? { ...json.rightLeg.knee }
+            : { ...cfg.rightLeg.attach },
       }
     : cfg.rightLeg;
+  cfg.leftShin = json.leftShin ? { pivot: { ...json.leftShin.pivot } } : { ...cfg.leftShin };
+  cfg.rightShin = json.rightShin ? { pivot: { ...json.rightShin.pivot } } : { ...cfg.rightShin };
   cfg.head = json.head ? { bob: json.head.bob ?? 1 } : cfg.head;
 
   ($('#cfg-clean') as HTMLInputElement).checked = Boolean(
@@ -360,8 +446,12 @@ async function importConfig(file: File): Promise<void> {
       json.parts.leftArm.cleanBackground ||
       json.parts.rightArm.cleanBackground ||
       json.parts.head?.cleanBackground ||
+      json.parts.leftForearm?.cleanBackground ||
+      json.parts.rightForearm?.cleanBackground ||
       json.parts.leftLeg?.cleanBackground ||
-      json.parts.rightLeg?.cleanBackground
+      json.parts.rightLeg?.cleanBackground ||
+      json.parts.leftShin?.cleanBackground ||
+      json.parts.rightShin?.cleanBackground
   );
 
   for (const key of MOVABLE_PARTS) {
@@ -375,10 +465,14 @@ async function importConfig(file: File): Promise<void> {
   const labels: Record<PartKey, string> = {
     body: 'tělo',
     head: 'hlava',
-    leftArm: 'levá paže',
-    rightArm: 'pravá paže',
-    leftLeg: 'levá noha',
-    rightLeg: 'pravá noha',
+    leftArm: 'levá paže (nadloktí)',
+    rightArm: 'pravá paže (nadloktí)',
+    leftForearm: 'levé předloktí',
+    rightForearm: 'pravé předloktí',
+    leftLeg: 'levá noha (stehno)',
+    rightLeg: 'pravá noha (stehno)',
+    leftShin: 'levá holeň',
+    rightShin: 'pravá holeň',
   };
 
   const results: [PartKey, boolean][] = [];
@@ -425,13 +519,21 @@ function activeTarget(): { key: PartKey; point: Point } {
     case 'legPivotR':
       return { key: 'rightLeg', point: cfg.rightLeg.pivot };
     case 'elbowL':
-      return { key: 'leftArm', point: cfg.leftArm.elbow };
+      return { key: 'leftArm', point: cfg.leftArm.attach };
     case 'elbowR':
-      return { key: 'rightArm', point: cfg.rightArm.elbow };
+      return { key: 'rightArm', point: cfg.rightArm.attach };
+    case 'forearmL':
+      return { key: 'leftForearm', point: cfg.leftForearm.pivot };
+    case 'forearmR':
+      return { key: 'rightForearm', point: cfg.rightForearm.pivot };
     case 'kneeL':
-      return { key: 'leftLeg', point: cfg.leftLeg.knee };
+      return { key: 'leftLeg', point: cfg.leftLeg.attach };
     case 'kneeR':
-      return { key: 'rightLeg', point: cfg.rightLeg.knee };
+      return { key: 'rightLeg', point: cfg.rightLeg.attach };
+    case 'shinL':
+      return { key: 'leftShin', point: cfg.leftShin.pivot };
+    case 'shinR':
+      return { key: 'rightShin', point: cfg.rightShin.pivot };
   }
 }
 
@@ -456,12 +558,37 @@ function drawMain(): void {
     if (!p) return;
     const joint =
       key === 'leftArm' ? cfg.leftArm : key === 'rightArm' ? cfg.rightArm : key === 'leftLeg' ? cfg.leftLeg : cfg.rightLeg;
+    const lowerKey =
+      key === 'leftArm'
+        ? 'leftForearm'
+        : key === 'rightArm'
+          ? 'rightForearm'
+          : key === 'leftLeg'
+            ? 'leftShin'
+            : 'rightShin';
+    const lp = parts[lowerKey];
+    const lowerDef = lp
+      ? lowerKey === 'leftForearm'
+        ? cfg.leftForearm
+        : lowerKey === 'rightForearm'
+          ? cfg.rightForearm
+          : lowerKey === 'leftShin'
+            ? cfg.leftShin
+            : cfg.rightShin
+      : null;
     const rot = swing && movableOf(key) ? rest + swingDir * 0.9 * Math.sin(phase) : rest;
+    const rotU = lowerDef ? rot - Math.atan2(joint.attach.y - joint.pivot.y, joint.attach.x - joint.pivot.x) : rot;
     ctx.save();
     ctx.translate(ox + at.x * scale, oy + at.y * scale);
-    ctx.rotate(rot);
+    ctx.rotate(rotU);
     ctx.drawImage(p.canvas, -joint.pivot.x * scale, -joint.pivot.y * scale, p.width * scale, p.height * scale);
-    const jp = 'knee' in joint ? joint.knee : 'elbow' in joint ? joint.elbow : undefined;
+    if (lp && lowerDef) {
+      ctx.save();
+      ctx.translate((joint.attach.x - joint.pivot.x) * scale, (joint.attach.y - joint.pivot.y) * scale);
+      ctx.drawImage(lp.canvas, -lowerDef.pivot.x * scale, -lowerDef.pivot.y * scale, lp.width * scale, lp.height * scale);
+      ctx.restore();
+    }
+    const jp = joint.attach;
     const activeMode =
       (key === 'leftArm' && mode === 'elbowL') ||
       (key === 'rightArm' && mode === 'elbowR') ||
@@ -536,8 +663,9 @@ function drawPart(): void {
   const oy = (pc.height - p.height * scale) / 2;
   ctx.drawImage(p.canvas, ox, oy, p.width * scale, p.height * scale);
 
-  const isLimb = key === 'leftArm' || key === 'rightArm' || key === 'leftLeg' || key === 'rightLeg';
-  const joint = isLimb
+  const isUpper = key === 'leftArm' || key === 'rightArm' || key === 'leftLeg' || key === 'rightLeg';
+  const isLower = key === 'leftForearm' || key === 'rightForearm' || key === 'leftShin' || key === 'rightShin';
+  const joint = isUpper
     ? key === 'leftArm'
       ? cfg.leftArm
       : key === 'rightArm'
@@ -546,7 +674,6 @@ function drawPart(): void {
           ? cfg.leftLeg
           : cfg.rightLeg
     : null;
-  const elbowOrKnee = isLimb && joint ? ('knee' in joint ? joint.knee : 'elbow' in joint ? joint.elbow : null) : null;
 
   const ring = (x: number, y: number, r: number, color: string, fill = true): void => {
     ctx.save();
@@ -586,12 +713,12 @@ function drawPart(): void {
     ctx.restore();
   }
 
-  if (isLimb && joint) {
-    const activeIsJoint = elbowOrKnee === point;
-    ring(ox + joint.pivot.x * scale, oy + joint.pivot.y * scale, 7, '#58a6ff', !activeIsJoint);
-    if (elbowOrKnee) {
-      ring(ox + elbowOrKnee.x * scale, oy + elbowOrKnee.y * scale, 7, activeIsJoint ? '#f85149' : '#5eead4', activeIsJoint);
-    }
+  if (isUpper && joint) {
+    const activeIsAttach = joint.attach === point;
+    ring(ox + joint.pivot.x * scale, oy + joint.pivot.y * scale, 7, '#58a6ff', !activeIsAttach);
+    ring(ox + joint.attach.x * scale, oy + joint.attach.y * scale, 7, activeIsAttach ? '#f85149' : '#5eead4', activeIsAttach);
+  } else if (isLower) {
+    ring(ox + point.x * scale, oy + point.y * scale, 7, '#f85149');
   } else {
     const px = ox + point.x * scale;
     const py = oy + point.y * scale;
@@ -684,8 +811,12 @@ function buildDims(): RigDimensions {
       case 'head':
       case 'leftArm':
       case 'rightArm':
+      case 'leftForearm':
+      case 'rightForearm':
       case 'leftLeg':
       case 'rightLeg':
+      case 'leftShin':
+      case 'rightShin':
         dims[key] = pt;
     }
   }
@@ -710,8 +841,8 @@ function buildConfig(): CutoutRigConfig {
       shoulderL: { ...cfg.body.shoulderL },
       shoulderR: { ...cfg.body.shoulderR },
     },
-    leftArm: { pivot: { ...cfg.leftArm.pivot }, restHandAngle: round3(cfg.leftArm.restHandAngle), elbow: { ...cfg.leftArm.elbow } },
-    rightArm: { pivot: { ...cfg.rightArm.pivot }, restHandAngle: round3(cfg.rightArm.restHandAngle), elbow: { ...cfg.rightArm.elbow } },
+    leftArm: { pivot: { ...cfg.leftArm.pivot }, restHandAngle: round3(cfg.leftArm.restHandAngle), attach: { ...cfg.leftArm.attach } },
+    rightArm: { pivot: { ...cfg.rightArm.pivot }, restHandAngle: round3(cfg.rightArm.restHandAngle), attach: { ...cfg.rightArm.attach } },
   };
 
   if (parts.head) {
@@ -719,15 +850,31 @@ function buildConfig(): CutoutRigConfig {
     out.body.neck = { ...cfg.body.neck };
     out.head = { bob: cfg.head.bob };
   }
+  if (parts.leftForearm) {
+    out.parts.leftForearm = partFile('leftForearm');
+    out.leftForearm = { pivot: { ...cfg.leftForearm.pivot } };
+  }
+  if (parts.rightForearm) {
+    out.parts.rightForearm = partFile('rightForearm');
+    out.rightForearm = { pivot: { ...cfg.rightForearm.pivot } };
+  }
   if (parts.leftLeg) {
     out.parts.leftLeg = partFile('leftLeg');
     out.body.hipL = { ...cfg.body.hipL };
-    out.leftLeg = { pivot: { ...cfg.leftLeg.pivot }, restAngle: round3(cfg.leftLeg.restAngle), knee: { ...cfg.leftLeg.knee } };
+    out.leftLeg = { pivot: { ...cfg.leftLeg.pivot }, restAngle: round3(cfg.leftLeg.restAngle), attach: { ...cfg.leftLeg.attach } };
   }
   if (parts.rightLeg) {
     out.parts.rightLeg = partFile('rightLeg');
     out.body.hipR = { ...cfg.body.hipR };
-    out.rightLeg = { pivot: { ...cfg.rightLeg.pivot }, restAngle: round3(cfg.rightLeg.restAngle), knee: { ...cfg.rightLeg.knee } };
+    out.rightLeg = { pivot: { ...cfg.rightLeg.pivot }, restAngle: round3(cfg.rightLeg.restAngle), attach: { ...cfg.rightLeg.attach } };
+  }
+  if (parts.leftShin) {
+    out.parts.leftShin = partFile('leftShin');
+    out.leftShin = { pivot: { ...cfg.leftShin.pivot } };
+  }
+  if (parts.rightShin) {
+    out.parts.rightShin = partFile('rightShin');
+    out.rightShin = { pivot: { ...cfg.rightShin.pivot } };
   }
 
   return out;
