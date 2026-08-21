@@ -32,6 +32,8 @@ export interface PuppetPoseSnapshot {
 export interface StagePoseSnapshot {
   leftPuppet: PuppetPoseSnapshot;
   rightPuppet: PuppetPoseSnapshot;
+  /** Additional (static) puppets beyond the two live ones. */
+  puppets?: ExtraPuppetPoseSnapshot[];
   background: {
     colorHex: number;
     stripActive: boolean;
@@ -40,6 +42,17 @@ export interface StagePoseSnapshot {
     stripOffsetY: number;
     stripParallaxFactor: number;
   };
+}
+
+/** Pose snapshot for an extra puppet, including its identity and layer order. */
+export interface ExtraPuppetPoseSnapshot extends PuppetPoseSnapshot {
+  id: string;
+}
+
+/** A stage puppet plus its stable identifier (for extras added via the panel). */
+interface StagePuppet {
+  id: string;
+  puppet: DynamicPuppet;
 }
 
 // Mild in-plane rotation: an upright hand (wrist below palm) maps to 0 deg,
@@ -105,6 +118,17 @@ export class PuppetRenderer {
   // Puppets
   private leftPuppet: DynamicPuppet;
   private rightPuppet: DynamicPuppet;
+
+  // Additional (static) puppets added via the "Správa loutek" panel. They are
+  // not hand-driven; they exist for stop-motion / manual placement.
+  private extraPuppets: StagePuppet[] = [];
+  private extraCounter: number = 0;
+  /** Id of the currently selected puppet ('L1' | 'L2' | extra id). */
+  private selectedPuppetId: string | null = null;
+  /** Visible selection rings (per puppet) drawn around its center. */
+  private extraHighlights: Map<string, Graphics> = new Map();
+  /** Notified when the user grabs/selects a puppet on the stage. */
+  public onPuppetSelect: ((id: string) => void) | null = null;
 
   // Theremin Visual Orbs
   private thereminContainer: Container;
@@ -185,6 +209,21 @@ export class PuppetRenderer {
 
   public getCanvasElement(): HTMLCanvasElement {
     return this.app.canvas as HTMLCanvasElement;
+  }
+
+  public getWidth(): number {
+    return this.width;
+  }
+
+  public getHeight(): number {
+    return this.height;
+  }
+
+  /** Converts a stage/global point into the world layer's local space
+   * (zoom-aware), so a puppet dropped by the mouse lands exactly under the
+   * cursor even when the stop-motion camera is zoomed in. Identity at zoom = 1. */
+  public stageToWorldLocal(x: number, y: number): { x: number; y: number } {
+    return this.worldContainer.toLocal({ x, y });
   }
 
   /** Captures a clean PNG snapshot of the stage with edit handles temporarily hidden. */
@@ -324,6 +363,7 @@ export class PuppetRenderer {
     // Completely hide puppets when Theremin mode is ON
     this.leftPuppet.container.visible = !enabled;
     this.rightPuppet.container.visible = !enabled;
+    for (const sp of this.extraPuppets) sp.puppet.container.visible = !enabled;
   }
 
   /**
@@ -415,9 +455,12 @@ export class PuppetRenderer {
    */
   public setEditHandlesVisible(visible: boolean): void {
     this.handlesVisible = visible;
-    for (const puppet of [this.leftPuppet, this.rightPuppet]) {
+    for (const puppet of [this.leftPuppet, this.rightPuppet, ...this.extraPuppets.map((sp) => sp.puppet)]) {
       if (puppet.editHandles) puppet.editHandles.visible = visible && this.poseEditing;
     }
+    // The selection highlight rings must never appear in a captured frame,
+    // exactly like the joint/body handles.
+    for (const ring of this.extraHighlights.values()) ring.visible = visible;
   }
 
   public setPoseEditing(enabled: boolean): void {
@@ -425,7 +468,7 @@ export class PuppetRenderer {
     this.dragInfo.clear();
     this.endDrag();
 
-    for (const puppet of [this.leftPuppet, this.rightPuppet]) {
+    for (const puppet of [this.leftPuppet, this.rightPuppet, ...this.extraPuppets.map((sp) => sp.puppet)]) {
       this.setupPoseEditingForPuppet(puppet, enabled);
     }
 
@@ -667,6 +710,11 @@ export class PuppetRenderer {
     if (!info) return;
 
     const puppet = info.puppet;
+    // Grabbing any handle of a puppet selects it (highlights it on stage
+    // and in the "Správa loutek" panel).
+    const pid = this.puppetIdOf(puppet);
+    if (pid) this.onPuppetSelect?.(pid);
+
     const global = { x: e.global.x, y: e.global.y };
     this.activeDrag = {
       puppet,
@@ -905,6 +953,18 @@ export class PuppetRenderer {
 
   private getLastHandStateForPuppet(puppet: DynamicPuppet): HandState | undefined {
     return puppet === this.leftPuppet ? this.lastLeftState : this.lastRightState;
+  }
+
+  private extraIdOf(puppet: DynamicPuppet): string | undefined {
+    return this.extraPuppets.find((sp) => sp.puppet === puppet)?.id;
+  }
+
+  /** Stable id for any puppet on stage: 'L1'/'L2' for the live slots, or the
+   * extra id for puppets added via the panel. */
+  private puppetIdOf(puppet: DynamicPuppet): string | undefined {
+    if (puppet === this.leftPuppet) return 'L1';
+    if (puppet === this.rightPuppet) return 'L2';
+    return this.extraIdOf(puppet);
   }
 
   /** Draws the four articulated limbs of a procedural puppet. `manual` holds
@@ -1209,6 +1269,10 @@ export class PuppetRenderer {
     return {
       leftPuppet: capturePuppet(this.leftPuppet),
       rightPuppet: capturePuppet(this.rightPuppet),
+      puppets: this.extraPuppets.map((sp) => ({
+        id: sp.id,
+        ...capturePuppet(sp.puppet),
+      })),
       background: {
         colorHex: this.currentBgColorHex,
         stripActive: !!(this.bgTiling && this.bgTiling.visible),
@@ -1255,6 +1319,9 @@ export class PuppetRenderer {
     await applyPuppet(this.leftPuppet, snapshot.leftPuppet, 'Left');
     await applyPuppet(this.rightPuppet, snapshot.rightPuppet, 'Right');
 
+    // Restore additional puppets (their count/layer order can change per frame).
+    await this.applyExtraPuppetSnapshots(snapshot.puppets);
+
     const bg = snapshot.background;
     this.currentBgColorHex = bg.colorHex;
     if (this.bgTiling) this.bgTiling.visible = bg.stripActive;
@@ -1264,6 +1331,293 @@ export class PuppetRenderer {
     }
     this.stripParallaxFactor = bg.stripParallaxFactor;
     this.setStripOffset(bg.stripOffsetX, bg.stripOffsetY);
+  }
+
+  /** Adds a new static puppet (from the "Správa loutek" panel) at a given world
+   * position. Returns the new puppet's id. */
+  public async addExtraPuppet(preset: PuppetPreset, x: number, y: number): Promise<string> {
+    const id = `extra-${++this.extraCounter}`;
+    const puppet = this.createEmptyPuppet(preset);
+    this.extraPuppets.push({ id, puppet });
+    this.worldContainer.addChild(puppet.container);
+    puppet.container.position.set(x, y);
+    await this.buildPuppetPresetById(puppet, preset);
+    if (this.poseEditing) this.setupPoseEditingForPuppet(puppet, true);
+    return id;
+  }
+
+  /** Removes an extra puppet by id. Returns true if it was found and removed. */
+  public removeExtraPuppet(id: string): boolean {
+    const idx = this.extraPuppets.findIndex((sp) => sp.id === id);
+    if (idx < 0) return false;
+    const [sp] = this.extraPuppets.splice(idx, 1);
+    this.extraHighlights.delete(id);
+    if (this.selectedPuppetId === id) {
+      this.selectedPuppetId = null;
+      this.applyExtraHighlight();
+    }
+    sp.puppet.container.destroy({ children: true });
+    return true;
+  }
+
+  public clearExtraPuppets(): void {
+    for (const sp of [...this.extraPuppets]) this.removeExtraPuppet(sp.id);
+  }
+
+  /** Ordered list (front to back) of extra puppets currently on the stage. */
+  public getExtraPuppets(): { id: string; preset: PuppetPreset }[] {
+    return this.extraPuppets.map((sp) => ({ id: sp.id, preset: sp.puppet.preset }));
+  }
+
+  public getExtraPuppetContainer(id: string): Container | undefined {
+    return this.extraPuppets.find((sp) => sp.id === id)?.puppet.container;
+  }
+
+  /** Reorders extra puppets so the given id list (front to back) becomes the
+   * z-order (last in the list renders on top). */
+  public reorderExtraPuppets(frontToBack: string[]): void {
+    const byId = new Map(this.extraPuppets.map((sp) => [sp.id, sp]));
+    const ordered = frontToBack
+      .map((id) => byId.get(id))
+      .filter((sp): sp is StagePuppet => !!sp);
+    // worldContainer.addChild appends to the top; add back-to-front so the
+    // frontmost puppet ends up rendered on top.
+    const backToFront = [...ordered].reverse();
+    for (const sp of backToFront) this.worldContainer.addChild(sp.puppet.container);
+    // Any ids that existed but weren't listed keep their relative order at the back.
+    const unlisted = this.extraPuppets.filter((sp) => !ordered.includes(sp));
+    for (const sp of unlisted) this.worldContainer.addChild(sp.puppet.container);
+    this.extraPuppets = [...unlisted, ...backToFront];
+  }
+
+  /** Returns the DynamicPuppet for a stage id ('L1', 'L2' or an extra id). */
+  private puppetById(id: string): DynamicPuppet | undefined {
+    if (id === 'L1') return this.leftPuppet;
+    if (id === 'L2') return this.rightPuppet;
+    return this.extraPuppets.find((sp) => sp.id === id)?.puppet;
+  }
+
+  /** Container for any stage puppet id ('L1', 'L2' or an extra id). */
+  public getPuppetContainer(id: string): Container | undefined {
+    return this.puppetById(id)?.container;
+  }
+
+  /** All puppets currently on the stage, back-to-front, with stable ids. Live
+   * slots are included as 'L1'/'L2' so they are manageable from the panel too. */
+  public getStagePuppets(): { id: string; preset: PuppetPreset; live: boolean }[] {
+    const order: { id: string; preset: PuppetPreset; live: boolean }[] = [];
+    const seen = new Set<Container>();
+    for (const child of this.worldContainer.children) {
+      if (child === this.leftPuppet.container) {
+        order.push({ id: 'L1', preset: this.leftPuppet.preset, live: true });
+        seen.add(child);
+      } else if (child === this.rightPuppet.container) {
+        order.push({ id: 'L2', preset: this.rightPuppet.preset, live: true });
+        seen.add(child);
+      } else {
+        const sp = this.extraPuppets.find((e) => e.puppet.container === child);
+        if (sp && !seen.has(child)) {
+          order.push({ id: sp.id, preset: sp.puppet.preset, live: false });
+          seen.add(child);
+        }
+      }
+    }
+    // Extra puppets whose container isn't a world child yet still show up.
+    for (const sp of this.extraPuppets) {
+      if (!seen.has(sp.puppet.container)) order.push({ id: sp.id, preset: sp.puppet.preset, live: false });
+    }
+    return order;
+  }
+
+  /** Reorders ALL stage puppets ('L1', 'L2', extras) so the given id list
+   * (front to back) becomes the z-order (last in the list renders on top). */
+  public reorderPuppets(frontToBack: string[]): void {
+    const byId = new Map(frontToBack.map((id, i) => [id, i]));
+    const puppets = this.getStagePuppets().sort(
+      (a, b) => (byId.get(a.id) ?? Infinity) - (byId.get(b.id) ?? Infinity)
+    );
+    // Back-to-front so the frontmost ends up on top.
+    const backToFront = [...puppets].reverse();
+    for (const p of backToFront) {
+      const container = this.getPuppetContainer(p.id);
+      if (container) this.worldContainer.addChild(container);
+    }
+  }
+
+  /** Removes any puppet from the stage: live slots become empty ('none'),
+   * extras are destroyed entirely. */
+  public async removePuppet(id: string): Promise<boolean> {
+    if (id === 'L1' || id === 'L2') {
+      await this.buildPuppetPreset(id === 'L1' ? 'Left' : 'Right', 'none');
+      if (this.selectedPuppetId === id) {
+        this.selectedPuppetId = null;
+        this.applyExtraHighlight();
+      }
+      return true;
+    }
+    return this.removeExtraPuppet(id);
+  }
+
+  /** Duplicates any puppet as a new extra puppet offset from the original.
+   * Returns the new puppet's id, or null if the source wasn't found. */
+  public async duplicatePuppet(id: string): Promise<string | null> {
+    const src = this.puppetById(id);
+    if (!src || src.preset === 'none') return null;
+    const x = src.container.position.x + 40;
+    const y = src.container.position.y + 40;
+    const newId = await this.addExtraPuppet(src.preset, x, y);
+    const dst = this.puppetById(newId);
+    if (dst) {
+      dst.container.rotation = src.container.rotation;
+      dst.manualPose = src.manualPose ? { ...src.manualPose } : undefined;
+      if (src.rig && dst.rig) {
+        const { parts: s } = src.rig;
+        const { parts: d } = dst.rig;
+        d.leftArmSprite.rotation = s.leftArmSprite.rotation;
+        d.rightArmSprite.rotation = s.rightArmSprite.rotation;
+        if (s.leftLegSprite && d.leftLegSprite) d.leftLegSprite.rotation = s.leftLegSprite.rotation;
+        if (s.rightLegSprite && d.rightLegSprite) d.rightLegSprite.rotation = s.rightLegSprite.rotation;
+        if (s.leftArmLower && d.leftArmLower) d.leftArmLower.rotation = s.leftArmLower.rotation;
+        if (s.rightArmLower && d.rightArmLower) d.rightArmLower.rotation = s.rightArmLower.rotation;
+        if (s.leftLegLower && d.leftLegLower) d.leftLegLower.rotation = s.leftLegLower.rotation;
+        if (s.rightLegLower && d.rightLegLower) d.rightLegLower.rotation = s.rightLegLower.rotation;
+        if (s.headContainer && d.headContainer) d.headContainer.position.copyFrom(s.headContainer.position);
+      }
+    }
+    return newId;
+  }
+
+  /** Highlights (or clears) any puppet with a gold ring around its center. */
+  public setSelectedPuppet(id: string | null): void {
+    this.selectedPuppetId = id;
+    this.applyExtraHighlight();
+  }
+
+  public getSelectedPuppetId(): string | null {
+    return this.selectedPuppetId;
+  }
+
+  public getExtraHighlightCount(): number {
+    return this.extraHighlights.size;
+  }
+
+  /** Debug: where is the highlight ring parented right now? */
+  public getHighlightDebug(id: string): { ring: boolean; parentChildren: number; inContainer: boolean; lastIsRing: boolean } | null {
+    const ring = this.extraHighlights.get(id);
+    if (!ring) return null;
+    const container = this.getPuppetContainer(id);
+    const inContainer = !!container && container.children.includes(ring);
+    const lastIsRing = !!container && container.children[container.children.length - 1] === ring;
+    return { ring: true, parentChildren: ring.parent ? ring.parent.children.length : -1, inContainer, lastIsRing };
+  }
+
+  private applyExtraHighlight(): void {
+    for (const g of this.extraHighlights.values()) g.destroy({ children: true });
+    this.extraHighlights.clear();
+    if (!this.selectedPuppetId) return;
+    const puppet = this.puppetById(this.selectedPuppetId);
+    if (!puppet) return;
+    const ring = new Graphics();
+    ring.circle(0, 0, 34).stroke({ width: 3, color: 0xf0b429, alpha: 0.95 });
+    ring.circle(0, 0, 5).fill(0xf0b429);
+    ring.eventMode = 'none';
+    ring.interactiveChildren = false;
+    puppet.container.addChild(ring);
+    this.extraHighlights.set(this.selectedPuppetId, ring);
+  }
+
+  /** Rebuilds a specific extra puppet's preset without touching the live slots. */
+  private async buildPuppetPresetById(puppet: DynamicPuppet, preset: PuppetPreset): Promise<void> {
+    puppet.preset = preset;
+    puppet.lastRotation = undefined;
+    puppet.container.removeChildren();
+    if (preset === 'none') {
+      puppet.rig = undefined;
+      puppet.container.visible = false;
+      return;
+    }
+    puppet.container.visible = true;
+    if (preset.startsWith('rig:')) {
+      if (preset.startsWith('rig:local:')) {
+        const localId = preset.slice('rig:local:'.length);
+        const config = loadLocalCharacterConfig(localId);
+        if (config) await this.buildRigPuppet(puppet, localId, config);
+        else console.warn(`Local rig "${localId}" not found.`);
+      } else {
+        await this.buildRigPuppet(puppet, preset.slice(4));
+      }
+      return;
+    }
+    puppet.rig = undefined;
+    puppet.torso.clear();
+    puppet.headGraphic.clear();
+    puppet.leftEye.clear();
+    puppet.rightEye.clear();
+    puppet.jaw.clear();
+    puppet.leftArm.clear();
+    puppet.rightArm.clear();
+    puppet.leftLeg.clear();
+    puppet.rightLeg.clear();
+    puppet.headContainer.removeChildren();
+    if (preset === 'fox') this.drawFoxPreset(puppet);
+    else if (preset === 'robot') this.drawRobotPreset(puppet);
+    else this.drawFoxPreset(puppet);
+    puppet.container.addChild(puppet.leftLeg);
+    puppet.container.addChild(puppet.rightLeg);
+    puppet.container.addChild(puppet.leftArm);
+    puppet.container.addChild(puppet.rightArm);
+    puppet.container.addChild(puppet.torso);
+    puppet.headContainer.addChild(puppet.headGraphic);
+    puppet.headContainer.addChild(puppet.jaw);
+    puppet.headContainer.addChild(puppet.leftEye);
+    puppet.headContainer.addChild(puppet.rightEye);
+    puppet.container.addChild(puppet.headContainer);
+  }
+
+  /** Applies saved extra-puppet poses: reconciles the set, order and poses. */
+  private async applyExtraPuppetSnapshots(snaps?: ExtraPuppetPoseSnapshot[]): Promise<void> {
+    if (!snaps) return;
+    const current = new Map(this.extraPuppets.map((sp) => [sp.id, sp.puppet]));
+    const wantedIds = snaps.map((s) => s.id);
+    for (const sp of [...this.extraPuppets]) {
+      if (!wantedIds.includes(sp.id)) this.removeExtraPuppet(sp.id);
+    }
+    for (const snap of snaps) {
+      let puppet = current.get(snap.id);
+      if (!puppet) {
+        const id = snap.id;
+        this.extraCounter = Math.max(this.extraCounter, parseInt(id.split('-')[1] ?? '0', 10) || 0);
+        const p = this.createEmptyPuppet(snap.preset);
+        puppet = p;
+        this.extraPuppets.push({ id, puppet: p });
+        this.worldContainer.addChild(p.container);
+      }
+      if (puppet.preset !== snap.preset) {
+        await this.buildPuppetPresetById(puppet, snap.preset);
+      }
+      puppet.container.position.set(snap.position.x, snap.position.y);
+      puppet.container.rotation = snap.rotation;
+      puppet.manualPose = snap.manualPose ? { ...snap.manualPose } : undefined;
+      if (puppet.rig && snap.rigRotations) {
+        const parts = puppet.rig.parts;
+        if (snap.rigRotations.leftArm !== undefined) parts.leftArmSprite.rotation = snap.rigRotations.leftArm;
+        if (snap.rigRotations.rightArm !== undefined) parts.rightArmSprite.rotation = snap.rigRotations.rightArm;
+        if (parts.leftLegSprite && snap.rigRotations.leftLeg !== undefined) parts.leftLegSprite.rotation = snap.rigRotations.leftLeg;
+        if (parts.rightLegSprite && snap.rigRotations.rightLeg !== undefined) parts.rightLegSprite.rotation = snap.rigRotations.rightLeg;
+        if (parts.leftArmLower && snap.rigRotations.leftArmLower !== undefined) parts.leftArmLower.rotation = snap.rigRotations.leftArmLower;
+        if (parts.rightArmLower && snap.rigRotations.rightArmLower !== undefined) parts.rightArmLower.rotation = snap.rigRotations.rightArmLower;
+        if (parts.leftLegLower && snap.rigRotations.leftLegLower !== undefined) parts.leftLegLower.rotation = snap.rigRotations.leftLegLower;
+        if (parts.rightLegLower && snap.rigRotations.rightLegLower !== undefined) parts.rightLegLower.rotation = snap.rigRotations.rightLegLower;
+        if (parts.headContainer && snap.headPosition) parts.headContainer.position.set(snap.headPosition.x, snap.headPosition.y);
+      } else if (puppet.preset !== 'none' && puppet.preset !== 'custom') {
+        this.renderProceduralPuppet(puppet);
+      }
+      if (this.poseEditing) this.layoutHandles(puppet);
+    }
+    // Fix z-order: last wanted id renders on top.
+    this.reorderExtraPuppets([...wantedIds].reverse());
+    // Rebuilds wiped the highlight ring; restore it for the selected puppet.
+    this.applyExtraHighlight();
   }
 
   public updateHandState(state: HandState, force = false): void {

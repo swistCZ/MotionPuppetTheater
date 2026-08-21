@@ -21,5 +21,11 @@ export default defineConfig({
       usePolling: true,
       interval: 300
     }
+  },
+  // NEVER auto-open a browser for the preview server: headless tests and any
+  // `vite preview` call must not spawn tabs/windows (WSL would open them in the
+  // Windows browser). Vite 6 would otherwise inherit `server.open`.
+  preview: {
+    open: false
   }
 });

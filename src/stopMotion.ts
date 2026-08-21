@@ -1,6 +1,7 @@
 import { GIFEncoder, quantize, applyPalette } from 'gifenc';
 import { zipSync } from 'fflate';
 import { StagePoseSnapshot } from './renderer';
+import { migrateStagePoseSnapshot } from './snapshot';
 
 export interface StopMotionFrame {
   id: string;
@@ -27,6 +28,9 @@ export interface StopMotionElements {
   onionCanvas: HTMLCanvasElement;
   playCanvas: HTMLCanvasElement;
   gridCanvas: HTMLCanvasElement;
+  frameCanvas: HTMLCanvasElement;
+  btnFrame: HTMLButtonElement;
+  frameRatio: HTMLSelectElement;
   btnSnap: HTMLButtonElement;
   btnLoadPose?: HTMLButtonElement;
   btnUpdateFrame?: HTMLButtonElement;
@@ -110,6 +114,15 @@ export class StopMotionController {
   private onionCtx: CanvasRenderingContext2D;
   private playCtx: CanvasRenderingContext2D;
   private gridCtx: CanvasRenderingContext2D;
+  private frameCtx: CanvasRenderingContext2D;
+
+  // --- View frame ("Záběr") ---
+  private frameEnabled: boolean = false;
+  private frameRatio: string = '16:9';
+  /** Frame rectangle as normalized (0..1) coordinates of the stage buffer. */
+  private frameRectNorm = { x: 0.1, y: 0.15, w: 0.8, h: 0.45 };
+  private frameDragMode: null | 'move' | 'nw' | 'ne' | 'sw' | 'se' | 'n' | 's' | 'e' | 'w' = null;
+  private frameDragStart: { px: number; py: number; rect: { x: number; y: number; w: number; h: number } } | null = null;
 
   constructor(
     private canvasSource: () => HTMLCanvasElement,
@@ -118,6 +131,7 @@ export class StopMotionController {
     this.onionCtx = elements.onionCanvas.getContext('2d')!;
     this.playCtx = elements.playCanvas.getContext('2d')!;
     this.gridCtx = elements.gridCanvas.getContext('2d')!;
+    this.frameCtx = elements.frameCanvas.getContext('2d')!;
     this.ghostCount = parseInt(elements.ghostSelect.value, 10) || 1;
 
     this.elements.btnSnap.addEventListener('click', () => this.snapFrame());
@@ -143,6 +157,22 @@ export class StopMotionController {
     this.elements.btnOnion.addEventListener('click', () => this.toggleOnion());
     this.elements.btnGrid.addEventListener('click', () => this.toggleGrid());
     this.elements.btnAb.addEventListener('click', () => this.toggleAb());
+    this.elements.btnFrame.addEventListener('click', () => this.toggleFrame());
+    this.elements.frameRatio.addEventListener('change', () => {
+      this.frameRatio = this.elements.frameRatio.value;
+      this.applyRatioToFrame();
+      this.drawFrame();
+    });
+
+    // Frame dragging: the frame canvas itself is click-through (so puppets can
+    // be posed inside), so border/handle hits are detected on the parent stage
+    // element in the capture phase and swallowed before Pixi sees them.
+    const frameHost = elements.frameCanvas.parentElement;
+    if (frameHost) {
+      frameHost.addEventListener('pointerdown', this.onFramePointerDown, true);
+      window.addEventListener('pointermove', this.onFramePointerMove);
+      window.addEventListener('pointerup', this.onFramePointerUp);
+    }
     this.elements.btnUndo.addEventListener('click', () => this.undo());
     this.elements.btnRedo.addEventListener('click', () => this.redo());
     this.elements.btnClear.addEventListener('click', () => this.clearAll());
@@ -195,6 +225,7 @@ export class StopMotionController {
     this.setOnionEnabled(false);
     this.clearAb();
     this.toggleGrid(false);
+    this.toggleFrame(false);
     this.updateOnion();
   }
 
@@ -204,6 +235,7 @@ export class StopMotionController {
       this.elements.onionCanvas,
       this.elements.playCanvas,
       this.elements.gridCanvas,
+      this.elements.frameCanvas,
     ]) {
       canvas.width = Math.round(width * dpr);
       canvas.height = Math.round(height * dpr);
@@ -212,6 +244,7 @@ export class StopMotionController {
     }
     this.updateOnion();
     if (this.gridEnabled) this.drawGrid();
+    if (this.frameEnabled) this.drawFrame();
   }
 
   public getFrameCount(): number {
@@ -459,6 +492,287 @@ export class StopMotionController {
     ctx.moveTo(cx, cy - 20);
     ctx.lineTo(cx, cy + 20);
     ctx.stroke();
+  }
+
+  // --- View frame ("Záběr") ---
+
+  /** Parses a ratio string like "16:9" to its numeric aspect (w/h), or null. */
+  private ratioValue(): number | null {
+    if (this.frameRatio === 'free') return null;
+    const [w, h] = this.frameRatio.split(':').map(Number);
+    return w > 0 && h > 0 ? w / h : null;
+  }
+
+  public toggleFrame(force?: boolean): void {
+    this.frameEnabled = force ?? !this.frameEnabled;
+    this.elements.frameCanvas.classList.toggle('active', this.frameEnabled);
+    this.elements.btnFrame.classList.toggle('btn-primary', this.frameEnabled);
+    this.elements.frameRatio.disabled = !this.frameEnabled;
+    if (this.frameEnabled) {
+      this.applyRatioToFrame();
+      this.drawFrame();
+    } else {
+      this.frameCtx.clearRect(0, 0, this.elements.frameCanvas.width, this.elements.frameCanvas.height);
+      this.frameDragMode = null;
+      this.frameDragStart = null;
+    }
+  }
+
+  /** Re-fits the current frame to the selected aspect ratio while keeping it
+   * centered on the stage. Operates in pixel space so the ratio is exact. */
+  private applyRatioToFrame(): void {
+    const ratio = this.ratioValue();
+    const cw = this.elements.frameCanvas.width;
+    const ch = this.elements.frameCanvas.height;
+    if (!ratio || !cw || !ch) return;
+    const r = this.frameRectNorm;
+    let wPx = r.w * cw;
+    let hPx = wPx / ratio;
+    if (hPx > ch) {
+      hPx = ch;
+      wPx = hPx * ratio;
+      if (wPx > cw) wPx = cw;
+    }
+    this.frameRectNorm = {
+      x: (cw - wPx) / 2 / cw,
+      y: (ch - hPx) / 2 / ch,
+      w: wPx / cw,
+      h: hPx / ch,
+    };
+  }
+
+  private drawFrame(): void {
+    const canvas = this.elements.frameCanvas;
+    const ctx = this.frameCtx;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const r = this.frameRectNorm;
+    const x = r.x * canvas.width;
+    const y = r.y * canvas.height;
+    const w = r.w * canvas.width;
+    const h = r.h * canvas.height;
+
+    // Dim everything outside the frame.
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.clearRect(x, y, w, h);
+
+    // Bright border.
+    ctx.strokeStyle = '#f0b429';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y, w, h);
+
+    // Rule-of-thirds guides inside the frame.
+    ctx.strokeStyle = 'rgba(240, 180, 41, 0.35)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i = 1; i < 3; i++) {
+      ctx.moveTo(x + (w * i) / 3, y);
+      ctx.lineTo(x + (w * i) / 3, y + h);
+      ctx.moveTo(x, y + (h * i) / 3);
+      ctx.lineTo(x + w, y + (h * i) / 3);
+    }
+    ctx.stroke();
+
+    // Corner handles.
+    const hs = 12;
+    ctx.fillStyle = '#f0b429';
+    ctx.strokeStyle = '#1c1917';
+    ctx.lineWidth = 1.5;
+    const corners: [number, number][] = [
+      [x, y],
+      [x + w, y],
+      [x, y + h],
+      [x + w, y + h],
+    ];
+    for (const [hx, hy] of corners) {
+      ctx.fillRect(hx - hs / 2, hy - hs / 2, hs, hs);
+      ctx.strokeRect(hx - hs / 2, hy - hs / 2, hs, hs);
+    }
+    // Edge-midpoint resize handles (smaller squares).
+    const es = 9;
+    const edges: [number, number][] = [
+      [x + w / 2, y],
+      [x + w / 2, y + h],
+      [x, y + h / 2],
+      [x + w, y + h / 2],
+    ];
+    for (const [hx, hy] of edges) {
+      ctx.fillRect(hx - es / 2, hy - es / 2, es, es);
+      ctx.strokeRect(hx - es / 2, hy - es / 2, es, es);
+    }
+
+    // Show the ratio / pixel size readout.
+    const ratio = this.ratioValue();
+    const label = ratio
+      ? `${this.frameRatio} · ${Math.round(w)}×${Math.round(h)}`
+      : `Volný · ${Math.round(w)}×${Math.round(h)}`;
+    ctx.font = '11px system-ui, sans-serif';
+    ctx.fillStyle = 'rgba(0,0,0,0.65)';
+    const tw = ctx.measureText(label).width;
+    ctx.fillRect(x + 8, y + 8, tw + 10, 18);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(label, x + 13, y + 21);
+  }
+
+  /** Converts a client pointer position to stage buffer coordinates. */
+  private pointerToBuffer(e: PointerEvent): { x: number; y: number } {
+    const rect = this.elements.frameCanvas.getBoundingClientRect();
+    return {
+      x: ((e.clientX - rect.left) / rect.width) * this.elements.frameCanvas.width,
+      y: ((e.clientY - rect.top) / rect.height) * this.elements.frameCanvas.height,
+    };
+  }
+
+  private handleHitTest(px: number, py: number): null | 'move' | 'nw' | 'ne' | 'sw' | 'se' | 'n' | 's' | 'e' | 'w' {
+    const r = this.frameRectNorm;
+    const x = r.x * this.elements.frameCanvas.width;
+    const y = r.y * this.elements.frameCanvas.height;
+    const w = r.w * this.elements.frameCanvas.width;
+    const h = r.h * this.elements.frameCanvas.height;
+    const hs = 14; // corner handle hit radius
+    const es = 12; // edge-midpoint handle hit radius
+
+    const near = (ax: number, ay: number): boolean => Math.hypot(px - ax, py - ay) <= hs;
+    if (near(x, y)) return 'nw';
+    if (near(x + w, y)) return 'ne';
+    if (near(x, y + h)) return 'sw';
+    if (near(x + w, y + h)) return 'se';
+
+    const mid = (ax: number, ay: number): boolean => Math.hypot(px - ax, py - ay) <= es;
+    if (mid(x + w / 2, y)) return 'n';
+    if (mid(x + w / 2, y + h)) return 's';
+    if (mid(x, y + h / 2)) return 'w';
+    if (mid(x + w, y + h / 2)) return 'e';
+
+    // Border line (not on a handle) moves the frame; interior passes through.
+    const edge = 5;
+    const inX = px >= x && px <= x + w;
+    const inY = py >= y && py <= y + h;
+    if (inX && Math.abs(py - y) <= edge) return 'move';
+    if (inX && Math.abs(py - (y + h)) <= edge) return 'move';
+    if (inY && Math.abs(px - x) <= edge) return 'move';
+    if (inY && Math.abs(px - (x + w)) <= edge) return 'move';
+    return null;
+  }
+
+  private clampFrameRect(): void {
+    const r = this.frameRectNorm;
+    const cw = this.elements.frameCanvas.width;
+    const ch = this.elements.frameCanvas.height;
+    const ratio = this.ratioValue();
+
+    let wPx = Math.max(60, r.w * cw);
+    let hPx = Math.max(60, r.h * ch);
+
+    if (ratio) {
+      // Work in pixels so the aspect ratio is exact. Fit within the canvas.
+      hPx = wPx / ratio;
+      if (hPx > ch) {
+        hPx = ch;
+        wPx = hPx * ratio;
+        if (wPx > cw) wPx = cw;
+      }
+      wPx = Math.min(cw, wPx);
+      hPx = Math.min(ch, hPx);
+    } else {
+      wPx = Math.min(cw, wPx);
+      hPx = Math.min(ch, hPx);
+    }
+
+    const x = Math.max(0, Math.min(r.x * cw, cw - wPx)) / cw;
+    const y = Math.max(0, Math.min(r.y * ch, ch - hPx)) / ch;
+    this.frameRectNorm = { x, y, w: wPx / cw, h: hPx / ch };
+  }
+
+  private onFramePointerDown = (e: PointerEvent): void => {
+    if (!this.frameEnabled || !this.modeActive) return;
+    const { x, y } = this.pointerToBuffer(e);
+    const mode = this.handleHitTest(x, y);
+    if (!mode) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+    this.frameDragMode = mode;
+    this.frameDragStart = {
+      px: x,
+      py: y,
+      rect: { ...this.frameRectNorm },
+    };
+  };
+
+  private onFramePointerMove = (e: PointerEvent): void => {
+    if (!this.frameDragMode || !this.frameDragStart) return;
+    e.preventDefault();
+    const { x, y } = this.pointerToBuffer(e);
+    const start = this.frameDragStart;
+    const cw = this.elements.frameCanvas.width;
+    const ch = this.elements.frameCanvas.height;
+    const ratio = this.ratioValue();
+    const dx = x - start.px;
+    const dy = y - start.py;
+
+    const MIN = 60;
+    let rect = { ...start.rect };
+    const toNorm = (px: number, py: number, pw: number, ph: number): void => {
+      rect = { x: px / cw, y: py / ch, w: pw / cw, h: ph / ch };
+    };
+
+    if (this.frameDragMode === 'move') {
+      toNorm(start.rect.x * cw + dx, start.rect.y * ch + dy, start.rect.w * cw, start.rect.h * ch);
+    } else {
+      // Work in pixels.
+      let L = start.rect.x * cw;
+      let T = start.rect.y * ch;
+      let R = start.rect.x * cw + start.rect.w * cw;
+      let B = start.rect.y * ch + start.rect.h * ch;
+      const m = this.frameDragMode;
+      if (m.includes('w')) L = Math.min(L + dx, R - MIN);
+      if (m.includes('e')) R = Math.max(R + dx, L + MIN);
+      if (m.includes('n')) T = Math.min(T + dy, B - MIN);
+      if (m.includes('s')) B = Math.max(B + dy, T + MIN);
+
+      let w = R - L;
+      let h = B - T;
+      if (ratio) {
+        // Anchor the fixed corner (the corner not being dragged) and keep ratio.
+        // R/L/T/B already include the pointer delta, so derive the new size
+        // directly from the dragged edge.
+        const anchorX = m.includes('w') ? R : L;
+        const anchorY = m.includes('n') ? B : T;
+        const wFromAnchor = Math.abs(anchorX - (m.includes('w') ? L : R));
+        const hFromAnchor = Math.abs(anchorY - (m.includes('n') ? T : B));
+        w = Math.max(wFromAnchor, hFromAnchor * ratio);
+        h = w / ratio;
+        L = m.includes('w') ? anchorX - w : anchorX;
+        R = L + w;
+        T = m.includes('n') ? anchorY - h : anchorY;
+        B = T + h;
+      }
+      toNorm(L, T, w, h);
+    }
+
+    this.frameRectNorm = rect;
+    this.clampFrameRect();
+    this.drawFrame();
+  };
+
+  private onFramePointerUp = (e: PointerEvent): void => {
+    if (!this.frameDragMode) return;
+    e.stopPropagation();
+    this.frameDragMode = null;
+    this.frameDragStart = null;
+  };
+
+  /** Buffer-space crop rect for exports, or null when the frame is off. */
+  public getCropRect(): { x: number; y: number; w: number; h: number } | null {
+    if (!this.frameEnabled) return null;
+    const c = this.elements.frameCanvas;
+    return {
+      x: Math.round(this.frameRectNorm.x * c.width),
+      y: Math.round(this.frameRectNorm.y * c.height),
+      w: Math.max(1, Math.round(this.frameRectNorm.w * c.width)),
+      h: Math.max(1, Math.round(this.frameRectNorm.h * c.height)),
+    };
   }
 
   // --- A/B flip (live scene vs reference frame) ---
@@ -745,9 +1059,18 @@ export class StopMotionController {
     this.setExporting(true);
     this.stopPlayback();
     if (this.abMode) this.clearAb();
+    const canvas = this.elements.playCanvas;
+    const origW = canvas.width;
+    const origH = canvas.height;
     try {
       const fps = parseInt(this.elements.fpsSelect.value, 10) || 24;
-      const canvas = this.elements.playCanvas;
+      const crop = this.getCropRect();
+      // Resize the playback canvas to the crop region so the exported video has
+      // exactly the frame's dimensions/aspect. Restored in the finally block.
+      if (crop) {
+        canvas.width = crop.w;
+        canvas.height = crop.h;
+      }
       const canvasStream = canvas as HTMLCanvasElement & { captureStream(fps?: number): MediaStream };
       if (typeof canvasStream.captureStream !== 'function') {
         this.elements.onStatus?.('Export WebM není v tomto prohlížeči podporován.');
@@ -786,8 +1109,7 @@ export class StopMotionController {
       recorder.start();
 
       const drawFrame = (img: HTMLImageElement): void => {
-        this.playCtx.clearRect(0, 0, canvas.width, canvas.height);
-        this.playCtx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        this.drawFrameToCanvas(img, this.playCtx, canvas.width, canvas.height);
         if (typeof track.requestFrame === 'function') track.requestFrame();
       };
 
@@ -819,7 +1141,12 @@ export class StopMotionController {
       this.elements.onStatus?.('Chyba při exportu WebM.');
     } finally {
       this.elements.playCanvas.classList.remove('active');
-      this.playCtx.clearRect(0, 0, this.elements.playCanvas.width, this.elements.playCanvas.height);
+      this.playCtx.clearRect(0, 0, origW, origH);
+      // Restore the full stage buffer if the crop resize changed it.
+      if (canvas.width !== origW || canvas.height !== origH) {
+        canvas.width = origW;
+        canvas.height = origH;
+      }
       this.setExporting(false);
     }
   }
@@ -841,8 +1168,7 @@ export class StopMotionController {
       this.elements.onStatus?.('Generuji GIF...');
       const images = await this.loadImages(this.frames);
       for (const img of images) {
-        ctx.clearRect(0, 0, size.width, size.height);
-        ctx.drawImage(img, 0, 0, size.width, size.height);
+        this.drawFrameToCanvas(img, ctx, size.width, size.height);
         const { data } = ctx.getImageData(0, 0, size.width, size.height);
         const palette = quantize(data, 256);
         const index = applyPalette(data, palette);
@@ -859,29 +1185,45 @@ export class StopMotionController {
     }
   }
 
-  /** Downloads all frames as PNG files inside a ZIP archive (original size). */
+  /** Downloads all frames as PNG files inside a ZIP archive (original size, or
+   * the active view-frame crop region when the "Záběr" frame is on). */
   private exportZip(): void {
     if (this.exporting || this.frames.length === 0) return;
     this.setExporting(true);
-    try {
-      const files: Record<string, Uint8Array> = {};
-      this.frames.forEach((frame, i) => {
-        const base64 = frame.dataUrl.split(',')[1];
-        if (!base64) return;
-        files[`frame-${String(i + 1).padStart(3, '0')}.png`] = this.base64ToBytes(base64);
-      });
-      const zipped = zipSync(files, { level: 6 });
-      this.downloadBlob(
-        new Blob([zipped], { type: 'application/zip' }),
-        `stop-motion-frames-${this.dateStamp()}.zip`
-      );
-      this.elements.onStatus?.('PNG snímky staženy (ZIP).');
-    } catch (err) {
-      console.error('ZIP export failed:', err);
-      this.elements.onStatus?.('Chyba při exportu ZIP.');
-    } finally {
-      this.setExporting(false);
-    }
+    void (async () => {
+      try {
+        const crop = this.getCropRect();
+        const files: Record<string, Uint8Array> = {};
+        const images = await this.loadImages(this.frames);
+        for (let i = 0; i < this.frames.length; i++) {
+          const img = images[i];
+          if (!img) continue;
+          let dataUrl = this.frames[i].dataUrl;
+          if (crop) {
+            const c = document.createElement('canvas');
+            c.width = crop.w;
+            c.height = crop.h;
+            const ctx = c.getContext('2d')!;
+            ctx.drawImage(img, crop.x, crop.y, crop.w, crop.h, 0, 0, crop.w, crop.h);
+            dataUrl = c.toDataURL('image/png');
+          }
+          const base64 = dataUrl.split(',')[1];
+          if (!base64) continue;
+          files[`frame-${String(i + 1).padStart(3, '0')}.png`] = this.base64ToBytes(base64);
+        }
+        const zipped = zipSync(files, { level: 6 });
+        this.downloadBlob(
+          new Blob([zipped], { type: 'application/zip' }),
+          `stop-motion-frames-${this.dateStamp()}.zip`
+        );
+        this.elements.onStatus?.('PNG snímky staženy (ZIP).');
+      } catch (err) {
+        console.error('ZIP export failed:', err);
+        this.elements.onStatus?.('Chyba při exportu ZIP.');
+      } finally {
+        this.setExporting(false);
+      }
+    })();
   }
 
   private async loadImages(frames: StopMotionFrame[]): Promise<HTMLImageElement[]> {
@@ -901,10 +1243,13 @@ export class StopMotionController {
 
   private getExportCanvasSize(maxWidth: number): { width: number; height: number } {
     const base = this.elements.playCanvas;
-    const scale = Math.min(1, maxWidth / base.width);
+    const crop = this.getCropRect();
+    const bw = crop ? crop.w : base.width;
+    const bh = crop ? crop.h : base.height;
+    const scale = Math.min(1, maxWidth / bw);
     return {
-      width: Math.max(1, Math.round(base.width * scale)),
-      height: Math.max(1, Math.round(base.height * scale)),
+      width: Math.max(1, Math.round(bw * scale)),
+      height: Math.max(1, Math.round(bh * scale)),
     };
   }
 
@@ -927,6 +1272,24 @@ export class StopMotionController {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     }, 1000);
+  }
+
+  /** Draws one frame onto a canvas of the given output size, applying the active
+   * view-frame crop (scaled to fill the output). With no crop the image fills
+   * the output. */
+  private drawFrameToCanvas(
+    img: HTMLImageElement,
+    ctx: CanvasRenderingContext2D,
+    outW: number,
+    outH: number
+  ): void {
+    const crop = this.getCropRect();
+    ctx.clearRect(0, 0, outW, outH);
+    if (crop) {
+      ctx.drawImage(img, crop.x, crop.y, crop.w, crop.h, 0, 0, outW, outH);
+    } else {
+      ctx.drawImage(img, 0, 0, outW, outH);
+    }
   }
 
   private getSupportedMimeType(): string {
@@ -995,6 +1358,11 @@ export class StopMotionController {
         this.elements.fpsSelect.value = String(json.fps);
       }
       this.frames = json.frames;
+      // Normalize every frame's pose to the current snapshot shape (old `.mpt`
+      // files from before multi-puppet support are migrated here).
+      this.frames = this.frames.map((frame) =>
+        frame.pose ? { ...frame, pose: migrateStagePoseSnapshot(frame.pose) } : frame
+      );
       this.selectedIndex = this.frames.length > 0 ? 0 : null;
       if (this.selectedIndex !== null && this.frames[0]?.pose && this.elements.applyPoseSnapshot) {
         await this.elements.applyPoseSnapshot(this.frames[0].pose);

@@ -726,11 +726,19 @@ function drawPart(): void {
   }
 }
 
-function previewPointFromEvent(e: MouseEvent, canvas: HTMLCanvasElement, scale: number, ox: number, oy: number): Point {
+function previewPointFromEvent(
+  e: MouseEvent,
+  canvas: HTMLCanvasElement,
+  scale: number,
+  ox: number,
+  oy: number,
+  maxX: number,
+  maxY: number
+): Point {
   const rect = canvas.getBoundingClientRect();
   const ix = ((e.clientX - rect.left) / rect.width) * canvas.width;
   const iy = ((e.clientY - rect.top) / rect.height) * canvas.height;
-  return { x: round(clamp((ix - ox) / scale, 0, canvas.width)), y: round(clamp((iy - oy) / scale, 0, canvas.height)) };
+  return { x: round(clamp((ix - ox) / scale, 0, maxX)), y: round(clamp((iy - oy) / scale, 0, maxY)) };
 }
 
 function partClick(e: MouseEvent): void {
@@ -742,7 +750,7 @@ function partClick(e: MouseEvent): void {
   const scale = fitScale(p.width, p.height, pc.width - pad * 2, pc.height - pad * 2);
   const ox = (pc.width - p.width * scale) / 2;
   const oy = (pc.height - p.height * scale) / 2;
-  const pt = previewPointFromEvent(e, pc, scale, ox, oy);
+  const pt = previewPointFromEvent(e, pc, scale, ox, oy, p.width, p.height);
   point.x = pt.x;
   point.y = pt.y;
   touched.add(key);
@@ -756,7 +764,7 @@ function mainClick(e: MouseEvent): void {
   const scale = Math.min(fitScale(body.width, body.height, mc.width * 0.82, mc.height * 0.84), 2.2);
   const ox = (mc.width - body.width * scale) / 2;
   const oy = (mc.height - body.height * scale) / 2;
-  const pt = previewPointFromEvent(e, mc, scale, ox, oy);
+  const pt = previewPointFromEvent(e, mc, scale, ox, oy, body.width, body.height);
   switch (mode) {
     case 'shoulderL':
       cfg.body.shoulderL = pt;

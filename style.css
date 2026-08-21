@@ -289,6 +289,238 @@ body {
   display: none;
 }
 
+/* Floating "Správa loutek" panel (stop-motion + mouse-only mode). */
+.puppet-manager {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 20;
+  width: 260px;
+  background: var(--panel-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  cursor: default;
+}
+
+.puppet-manager.hidden {
+  display: none;
+}
+
+.puppet-manager.collapsed .pm-body {
+  display: none;
+}
+
+.puppet-manager.collapsed .pm-minimized {
+  display: flex;
+}
+
+.puppet-manager.docked-left { right: auto; left: 16px; }
+.puppet-manager.docked-top { top: 16px; bottom: auto; }
+.puppet-manager.docked-bottom { top: auto; bottom: 16px; }
+
+.pm-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid var(--panel-border);
+  cursor: grab;
+  user-select: none;
+}
+
+.pm-header:active { cursor: grabbing; }
+
+.pm-title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-light);
+}
+
+.pm-icon-btn {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-light);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.pm-icon-btn:hover { background: rgba(255, 255, 255, 0.16); }
+
+.pm-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  max-height: calc(100vh - 200px);
+  overflow-y: auto;
+}
+
+.pm-section-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(230, 237, 243, 0.7);
+  margin-bottom: 6px;
+}
+
+.pm-palette {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.pm-palette-item {
+  aspect-ratio: 1;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  cursor: grab;
+  overflow: hidden;
+  padding: 4px;
+}
+
+.pm-palette-item:hover { border-color: var(--accent-blue); background: rgba(88, 166, 255, 0.08); }
+
+/* Preset placeholders so fox/robot are visible without an uploaded image. */
+.pm-palette-item[data-preset="fox"] { background: rgba(237, 137, 54, 0.28); }
+.pm-palette-item[data-preset="fox"]:hover { background: rgba(237, 137, 54, 0.42); }
+.pm-palette-item[data-preset="robot"] { background: rgba(192, 201, 214, 0.28); }
+.pm-palette-item[data-preset="robot"]:hover { background: rgba(192, 201, 214, 0.42); }
+
+.pm-palette-item .pm-pal-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.pm-palette-item .pm-pal-label {
+  font-size: 10px;
+  color: rgba(230, 237, 243, 0.8);
+  text-align: center;
+  line-height: 1.1;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pm-layers { display: flex; flex-direction: column; gap: 4px; }
+
+.pm-layer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-light);
+}
+
+.pm-layer:hover { background: rgba(255, 255, 255, 0.08); }
+
+.pm-layer.active {
+  border-color: var(--accent-blue);
+  background: rgba(88, 166, 255, 0.12);
+  font-weight: 600;
+}
+
+.pm-layer .pm-layer-handle {
+  color: rgba(230, 237, 243, 0.6);
+  cursor: grab;
+  font-size: 14px;
+}
+
+.pm-layer .pm-layer-thumb {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  pointer-events: none;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+}
+
+.pm-layer .pm-layer-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.pm-layer.dragging { opacity: 0.4; }
+
+.pm-delete-btn {
+  margin-top: 8px;
+  width: 100%;
+  height: 30px;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  background: rgba(248, 81, 73, 0.12);
+  color: var(--text-light);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.pm-delete-btn:hover:not(:disabled) { background: var(--accent-red); border-color: var(--accent-red); color: #fff; }
+
+.pm-delete-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.pm-minimized {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  cursor: grab;
+  user-select: none;
+}
+
+.pm-min-title { font-size: 12px; font-weight: 700; color: var(--text-light); }
+
+.pm-min-count {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-blue);
+  background: rgba(88, 166, 255, 0.12);
+  border-radius: 10px;
+  padding: 1px 8px;
+}
+
+.pm-min-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+}
+
+.pm-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.pm-actions .pm-delete-btn { margin-top: 0; flex: 1; }
+
 /* Playback overlay shows the captured frames on top of the stage. */
 .sm-play-canvas {
   position: absolute;
@@ -318,6 +550,24 @@ body {
 }
 
 .sm-grid-canvas.active {
+  display: block;
+}
+
+/* View frame ("Záběr") overlay: a moveable/resizable crop guide. It must stay
+   click-through so puppets can still be posed inside the frame; border/handle
+   dragging is handled by hit-testing in JS on the parent stage element. */
+.sm-frame-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 14;
+  display: none;
+}
+
+.sm-frame-canvas.active {
   display: block;
 }
 

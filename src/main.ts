@@ -55,6 +55,10 @@ class AppManager {
   private smHintDismissed: boolean = false;
   private advanceStripAfterSnap: () => void = () => {};
 
+  // Floating "Správa loutek" panel (multi-puppet, stop-motion mouse-only mode).
+  private pmActiveId: string | null = null;
+  private pmLayerDragId: string | null = null;
+
   // Real-time Display FPS Loop
   private lastFrameTime: number = performance.now();
   private frameCount: number = 0;
@@ -92,6 +96,9 @@ class AppManager {
         onionCanvas: document.getElementById('sm-onion-canvas') as HTMLCanvasElement,
         playCanvas: document.getElementById('sm-play-canvas') as HTMLCanvasElement,
         gridCanvas: document.getElementById('sm-grid-canvas') as HTMLCanvasElement,
+        frameCanvas: document.getElementById('sm-frame-canvas') as HTMLCanvasElement,
+        btnFrame: document.getElementById('sm-btn-frame') as HTMLButtonElement,
+        frameRatio: document.getElementById('sm-frame-ratio') as HTMLSelectElement,
         btnSnap: document.getElementById('sm-btn-snap') as HTMLButtonElement,
         btnLoadPose: document.getElementById('sm-btn-load-pose') as HTMLButtonElement,
         btnUpdateFrame: document.getElementById('sm-btn-update-frame') as HTMLButtonElement,
@@ -147,6 +154,7 @@ class AppManager {
     await this.renderer.initialize(stageContainer);
 
     ;(window as unknown as { __mptDebug?: unknown }).__mptDebug = this.renderer;
+    ;(window as unknown as { __mptStopMotion?: unknown }).__mptStopMotion = this.stopMotion;
 
     this.resizeCanvas();
     const stage = document.getElementById('pixi-viewport') as HTMLElement;
@@ -156,6 +164,7 @@ class AppManager {
 
     this.setupUIControls();
     await this.populateRigCharacters();
+    await this.setupPuppetManager();
     this.startDisplayLoop();
   }
 
@@ -521,6 +530,7 @@ class AppManager {
         // entry after the exit handler resets it), so the UI never lies.
         smBtnHand.textContent = this.renderer.isHandFollowEnabled() ? 'Ruka (ZAP)' : 'Ruka';
         smBtnHand.classList.toggle('btn-primary', this.renderer.isHandFollowEnabled());
+        this.updatePuppetManagerVisibility();
         // The bottom panel owns the background controls while in this mode,
         // so hide the duplicated top-bar scene group.
         sceneGroup.classList.add('hidden');
@@ -536,6 +546,7 @@ class AppManager {
         // the mode must restore default hand tracking, otherwise a session
         // where the user disabled Ruka silently leaves normal mode frozen.
         this.renderer.setHandFollowEnabled(true);
+        this.updatePuppetManagerVisibility();
         this.showStatus('Stop-motion režim vypnut.');
       }
       setTimeout(() => this.hideStatus(), 3000);
@@ -678,6 +689,7 @@ class AppManager {
       this.renderer.setHandFollowEnabled(active);
       smBtnHand.textContent = active ? 'Ruka (ZAP)' : 'Ruka';
       smBtnHand.classList.toggle('btn-primary', active);
+      this.updatePuppetManagerVisibility();
       this.showStatus(
         active
           ? 'Ruce opět ovládají loutky.'
@@ -764,6 +776,284 @@ class AppManager {
       };
       reader.readAsDataURL(file);
     }
+  }
+
+  /** Builds the floating "Správa loutek" panel: character palette (drag & drop
+   * onto the scene) and the on-stage layer list (select / reorder / delete). */
+  private async setupPuppetManager(): Promise<void> {
+    const manager = document.getElementById('puppet-manager') as HTMLElement;
+    const palette = document.getElementById('pm-palette') as HTMLElement;
+    const layers = document.getElementById('pm-layers') as HTMLElement;
+    const btnToggle = document.getElementById('pm-toggle') as HTMLButtonElement;
+    const header = manager.querySelector('.pm-header') as HTMLElement;
+
+    // --- Collapse / expand (must not start a header drag) ---
+    btnToggle.addEventListener('pointerdown', (e) => e.stopPropagation());
+    btnToggle.addEventListener('click', () => {
+      const collapsed = manager.classList.toggle('collapsed');
+      btnToggle.innerHTML = collapsed ? '&#9652;' : '&#9662;';
+    });
+
+    // --- Draggable / dockable window ---
+    let dragOffset = { x: 0, y: 0 };
+    let dragStart = { x: 0, y: 0 };
+    let dragging = false;
+    header.addEventListener('pointerdown', (e) => {
+      const rect = manager.getBoundingClientRect();
+      dragOffset = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+      dragStart = { x: e.clientX, y: e.clientY };
+      dragging = false;
+      header.setPointerCapture(e.pointerId);
+    });
+    header.addEventListener('pointermove', (e) => {
+      if (!header.hasPointerCapture(e.pointerId)) return;
+      if (Math.hypot(e.clientX - dragStart.x, e.clientY - dragStart.y) > 4) dragging = true;
+      if (!dragging) return;
+      manager.classList.remove('docked-left', 'docked-top', 'docked-bottom');
+      manager.style.left = `${e.clientX - dragOffset.x}px`;
+      manager.style.top = `${e.clientY - dragOffset.y}px`;
+    });
+    header.addEventListener('pointerup', (e) => {
+      if (!header.hasPointerCapture(e.pointerId)) return;
+      header.releasePointerCapture(e.pointerId);
+      // Only dock when the user actually dragged (a plain click on the header
+      // must not snap the window to an edge).
+      if (!dragging) return;
+      const rightGap = window.innerWidth - (e.clientX + (manager.offsetWidth - dragOffset.x));
+      const topGap = e.clientY - dragOffset.y;
+      const bottomGap = window.innerHeight - (e.clientY + (manager.offsetHeight - dragOffset.y));
+      if (rightGap < 40) {
+        manager.classList.add('docked-left');
+        manager.style.left = '';
+        manager.style.top = `${Math.max(8, topGap)}px`;
+      } else if (topGap < 24) {
+        manager.classList.add('docked-top');
+        manager.style.top = '';
+        manager.style.left = `${Math.max(8, e.clientX - dragOffset.x)}px`;
+      } else if (bottomGap < 24) {
+        manager.classList.add('docked-bottom');
+        manager.style.bottom = '';
+        manager.style.top = '';
+        manager.style.left = `${Math.max(8, e.clientX - dragOffset.x)}px`;
+      }
+    });
+
+    // --- Palette: character thumbnails, drag & drop onto the stage ---
+    const entries: { preset: string; name: string; thumb?: string }[] = [
+      { preset: 'fox', name: 'Liška' },
+      { preset: 'robot', name: 'Robot' },
+    ];
+    for (const id of await fetchRigIdList()) {
+      try {
+        const cfg = await fetchRigConfig(id);
+        entries.push({ preset: `rig:${id}`, name: cfg.name || id, thumb: cfg.parts?.body?.src });
+      } catch {
+        /* skip broken character */
+      }
+    }
+    for (const id of listLocalCharacterIds()) {
+      const cfg = loadLocalCharacterConfig(id);
+      if (!cfg) continue;
+      entries.push({ preset: `rig:local:${id}`, name: cfg.name || id, thumb: cfg.parts?.body?.src });
+    }
+
+    for (const entry of entries) {
+      const item = document.createElement('div');
+      item.className = 'pm-palette-item';
+      item.draggable = true;
+      item.title = entry.name;
+      if (entry.thumb) {
+        const img = document.createElement('img');
+        img.className = 'pm-pal-thumb';
+        img.src = entry.thumb;
+        img.alt = '';
+        item.appendChild(img);
+      }
+      const label = document.createElement('span');
+      label.className = 'pm-pal-label';
+      label.textContent = entry.name;
+      item.appendChild(label);
+      item.dataset.preset = entry.preset;
+      item.addEventListener('dragstart', (e) => {
+        e.dataTransfer?.setData('text/plain', entry.preset);
+      });
+      // Click = add at a cascading default position (drag & drop = exact spot).
+      item.addEventListener('click', () => {
+        const count = this.renderer.getExtraPuppets().length;
+        const w = this.renderer.getWidth();
+        const h = this.renderer.getHeight();
+        const x = w * 0.5 + (count % 3 - 1) * 90;
+        const y = h * 0.5 + Math.floor(count / 3) * 70;
+        void this.addPuppetAt(entry.preset as PuppetPreset, x, y);
+      });
+      palette.appendChild(item);
+    }
+
+    // Drop target = whole stage container.
+    const stage = document.getElementById('pixi-viewport') as HTMLElement;
+    stage.addEventListener('dragover', (e) => e.preventDefault());
+    stage.addEventListener('drop', (e) => {
+      e.preventDefault();
+      const preset = e.dataTransfer?.getData('text/plain') as PuppetPreset | undefined;
+      if (!preset) return;
+      const rect = stage.getBoundingClientRect();
+      const gx = (e.clientX - rect.left) * (this.renderer.getWidth() / Math.max(1, rect.width));
+      const gy = (e.clientY - rect.top) * (this.renderer.getHeight() / Math.max(1, rect.height));
+      const local = this.renderer.stageToWorldLocal(gx, gy);
+      void this.addPuppetAt(preset, local.x, local.y);
+    });
+
+    // --- Selection callback from the renderer (grab a puppet on stage) ---
+    this.renderer.onPuppetSelect = (id) => {
+      this.pmActiveId = id;
+      this.renderer.setSelectedPuppet(id);
+      this.refreshPmLayers();
+    };
+
+    // --- Delete selected puppet (live slots become empty, extras removed) ---
+    const btnDeleteSelected = document.getElementById('pm-delete-selected') as HTMLButtonElement;
+    btnDeleteSelected.addEventListener('click', () => {
+      if (!this.pmActiveId) return;
+      const id = this.pmActiveId;
+      void (async () => {
+        await this.renderer.removePuppet(id);
+        this.pmActiveId = null;
+        this.renderer.setSelectedPuppet(null);
+        this.refreshPmLayers();
+        this.showStatus('Loutka odebrána ze scény.');
+        setTimeout(() => this.hideStatus(), 2000);
+      })();
+    });
+
+    // --- Duplicate selected puppet ---
+    const btnDuplicate = document.getElementById('pm-duplicate') as HTMLButtonElement;
+    btnDuplicate.addEventListener('click', () => {
+      if (!this.pmActiveId) return;
+      const id = this.pmActiveId;
+      void (async () => {
+        const newId = await this.renderer.duplicatePuppet(id);
+        if (newId) {
+          this.pmActiveId = newId;
+          this.renderer.setSelectedPuppet(newId);
+          this.refreshPmLayers();
+          this.showStatus('Loutka zduplikována.');
+          setTimeout(() => this.hideStatus(), 2000);
+        }
+      })();
+    });
+
+    // --- Minimized strip controls (duplicate / delete act on the selection) ---
+    const pmMinDuplicate = document.getElementById('pm-min-duplicate') as HTMLButtonElement;
+    const pmMinDelete = document.getElementById('pm-min-delete') as HTMLButtonElement;
+    pmMinDuplicate.addEventListener('pointerdown', (e) => e.stopPropagation());
+    pmMinDelete.addEventListener('pointerdown', (e) => e.stopPropagation());
+    pmMinDuplicate.addEventListener('click', () => btnDuplicate.click());
+    pmMinDelete.addEventListener('click', () => btnDeleteSelected.click());
+
+    // --- Layer list: click to select, drag to reorder ---
+    layers.addEventListener('click', (e) => {
+      const row = (e.target as HTMLElement).closest('.pm-layer') as HTMLElement | null;
+      if (!row) return;
+      this.pmActiveId = row.dataset.id ?? null;
+      this.renderer.setSelectedPuppet(this.pmActiveId);
+      this.refreshPmLayers();
+    });
+    layers.addEventListener('dragstart', (e) => {
+      const row = (e.target as HTMLElement).closest('.pm-layer') as HTMLElement | null;
+      if (!row) return;
+      this.pmLayerDragId = row.dataset.id ?? null;
+      e.dataTransfer?.setData('text/plain', this.pmLayerDragId ?? '');
+    });
+    layers.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      if (!this.pmLayerDragId) return;
+      const dragged = layers.querySelector(`.pm-layer[data-id="${this.pmLayerDragId}"]`) as HTMLElement | null;
+      const over = (e.target as HTMLElement).closest('.pm-layer') as HTMLElement | null;
+      if (!dragged || !over || over === dragged) return;
+      const box = over.getBoundingClientRect();
+      const before = e.clientY < box.top + box.height / 2;
+      if (before) {
+        if (over.previousSibling !== dragged) layers.insertBefore(dragged, over);
+      } else {
+        if (over.nextSibling !== dragged) layers.insertBefore(dragged, over.nextSibling);
+      }
+    });
+    layers.addEventListener('dragend', () => {
+      const order = Array.from(layers.querySelectorAll('.pm-layer')).map(
+        (el) => (el as HTMLElement).dataset.id as string
+      );
+      // Layers list is front-to-back; reorder method expects front-to-back.
+      this.renderer.reorderPuppets(order);
+      this.refreshPmLayers();
+      this.pmLayerDragId = null;
+    });
+
+this.refreshPmLayers();
+  }
+
+  /** Adds an extra puppet, selects it and refreshes the layer list. */
+  private async addPuppetAt(preset: PuppetPreset, x: number, y: number): Promise<void> {
+    const id = await this.renderer.addExtraPuppet(preset, x, y);
+    this.pmActiveId = id;
+    this.renderer.setSelectedPuppet(id);
+    this.refreshPmLayers();
+    this.showStatus(`Loutka přidána na scénu (${x.toFixed(0)}, ${y.toFixed(0)}).`);
+    setTimeout(() => this.hideStatus(), 2000);
+  }
+
+  /** Rebuilds the on-stage layer list (front to back). Includes the live slots
+   * (L1/L2) and every extra puppet added via the panel. */
+  private refreshPmLayers(): void {
+    const layers = document.getElementById('pm-layers') as HTMLElement;
+    layers.innerHTML = '';
+    const puppets = this.renderer.getStagePuppets();
+    // Only show puppets that actually have a visible preset.
+    const visible = puppets.filter((p) => p.preset !== 'none');
+    for (const sp of [...visible].reverse()) {
+      const row = document.createElement('div');
+      row.className = 'pm-layer' + (sp.id === this.pmActiveId ? ' active' : '');
+      row.dataset.id = sp.id;
+      row.draggable = true;
+      const handle = document.createElement('span');
+      handle.className = 'pm-layer-handle';
+      handle.textContent = '\u2630';
+      row.appendChild(handle);
+      const name = document.createElement('span');
+      name.className = 'pm-layer-name';
+      name.textContent = this.presetName(sp.preset) + (sp.live ? ' · ruce' : '');
+      row.appendChild(name);
+      layers.appendChild(row);
+    }
+    const btnDeleteSelected = document.getElementById('pm-delete-selected') as HTMLButtonElement;
+    const btnDuplicate = document.getElementById('pm-duplicate') as HTMLButtonElement;
+    const pmMinDuplicate = document.getElementById('pm-min-duplicate') as HTMLButtonElement;
+    const pmMinDelete = document.getElementById('pm-min-delete') as HTMLButtonElement;
+    const countEl = document.getElementById('pm-min-count') as HTMLElement;
+    const hasSelection = this.pmActiveId !== null;
+    btnDeleteSelected.disabled = !hasSelection;
+    btnDuplicate.disabled = !hasSelection;
+    pmMinDuplicate.disabled = !hasSelection;
+    pmMinDelete.disabled = !hasSelection;
+    countEl.textContent = String(visible.length);
+  }
+
+  private presetName(preset: string): string {
+    if (preset === 'fox') return 'Liška';
+    if (preset === 'robot') return 'Robot';
+    if (preset === 'custom') return 'Vlastní';
+    if (preset.startsWith('rig:local:')) {
+      const cfg = loadLocalCharacterConfig(preset.slice('rig:local:'.length));
+      return cfg?.name || 'Rig';
+    }
+    return 'Rig';
+  }
+
+  /** Shows/hides the floating puppet manager based on mode. */
+  private updatePuppetManagerVisibility(): void {
+    const manager = document.getElementById('puppet-manager') as HTMLElement;
+    const visible = this.stopMotionActive && !this.renderer.isHandFollowEnabled();
+    manager.classList.toggle('hidden', !visible);
+    if (visible) this.refreshPmLayers();
   }
 
   private handleTrackingResults(results: Results): void {

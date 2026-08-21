@@ -89,6 +89,9 @@
         <!-- Stop-Motion Registration Grid Overlay -->
         <canvas id="sm-grid-canvas" class="sm-grid-canvas"></canvas>
 
+        <!-- Stop-Motion View Frame (Záběr) Overlay - crop/framing guide -->
+        <canvas id="sm-frame-canvas" class="sm-frame-canvas"></canvas>
+
         <!-- Stop-Motion onboarding hint (visible until the first frame or dismissed) -->
         <div id="sm-empty-hint" class="sm-empty-hint hidden">
           <button id="sm-hint-close" class="sm-empty-hint-close" title="Zavřít nápovědu" aria-label="Zavřít">&times;</button>
@@ -100,6 +103,40 @@
 
         <!-- Status Banner -->
         <div id="status-banner" class="status-banner hidden"></div>
+
+        <!-- Floating Puppet Manager (stop-motion + mouse-only mode) -->
+        <div id="puppet-manager" class="puppet-manager hidden">
+          <div class="pm-header">
+            <span class="pm-title">Správa loutek</span>
+            <button type="button" id="pm-toggle" class="pm-icon-btn" title="Sbalit / rozbalit okno" aria-label="Sbalit / rozbalit okno">&#9662;</button>
+          </div>
+          <div class="pm-body">
+            <div class="pm-palette-wrap">
+              <div class="pm-section-label">Přidat loutku (klikni nebo přetáhni na scénu)</div>
+              <div id="pm-palette" class="pm-palette"></div>
+            </div>
+            <div class="pm-layers-wrap">
+              <div class="pm-section-label">Loutky na scéně (nahoře = vepředu)</div>
+              <div id="pm-layers" class="pm-layers"></div>
+              <div class="pm-actions">
+                <button type="button" id="pm-duplicate" class="pm-delete-btn" disabled>Duplikovat</button>
+                <button type="button" id="pm-delete-selected" class="pm-delete-btn" disabled>Smazat vybranou loutku</button>
+              </div>
+            </div>
+          </div>
+          <div class="pm-minimized hidden">
+            <span class="pm-min-title">Loutky</span>
+            <span class="pm-min-count" id="pm-min-count">0</span>
+            <div class="pm-min-actions">
+              <button type="button" id="pm-min-duplicate" class="pm-icon-btn" title="Duplikovat vybranou loutku" aria-label="Duplikovat vybranou loutku">
+                <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M5 16V5a1 1 0 0 1 1-1h10" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+              </button>
+              <button type="button" id="pm-min-delete" class="pm-icon-btn" title="Smazat vybranou loutku" aria-label="Smazat vybranou loutku">
+                <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M6 7h12l-1 14a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1L6 7z" fill="none" stroke="currentColor" stroke-width="2"/><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M10 11v6M14 11v6" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
 
         <!-- Stop-Motion Timeline Panel -->
         <section id="sm-panel" class="sm-panel hidden">
@@ -184,6 +221,22 @@
                 Otevřít projekt
                 <input type="file" id="sm-upload-project" accept=".mpt,.json" />
               </label>
+            </div>
+
+            <span class="sm-separator"></span>
+
+            <div class="sm-group">
+              <button id="sm-btn-frame" class="btn btn-secondary" title="Zapnout/vypnout záběrový rámeček – určuje výřez, který se ukládá při exportu">Záběr</button>
+              <label class="compact-label" for="sm-frame-ratio">Poměr:</label>
+              <select id="sm-frame-ratio" class="select-input" disabled>
+                <option value="free">Volný</option>
+                <option value="1:1">1:1</option>
+                <option value="4:3">4:3</option>
+                <option value="3:2">3:2</option>
+                <option value="16:9" selected>16:9</option>
+                <option value="21:9">21:9</option>
+                <option value="9:16">9:16</option>
+              </select>
             </div>
 
             <span class="sm-separator"></span>
@@ -309,6 +362,18 @@
               <li>Na stránce <a class="help-link" href="./builder.html">Builder</a> nahraj až 6 částí (tělo + hlava + paže + nohy), klikáním umísti klouby a urči, které části jsou pohyblivé.</li>
               <li>Hotovou loutku <strong>Uložíš do prohlížeče</strong> (objeví se v seznamu L1/L2) nebo exportuješ <code>config.json</code>.</li>
             </ul>
+          </section>
+
+          <section class="help-section">
+            <h3>Více loutek (Správa loutek)</h3>
+            <ul class="help-list">
+              <li>Ve stop-motion režimu vypni <strong>Ruka</strong> – vpravo nahoře se objeví plovoucí okno <strong>Správa loutek</strong>.</li>
+              <li><strong>Přetáhni náhled postavy</strong> z palety na scénu – loutka se umístí přesně tam, kam ji pustíš. Můžeš jich přidat libovolně.</li>
+              <li>V seznamu <strong>Loutky na scéně</strong> je pořadí vrstev (nahoře = vepředu). Klik = výběr, přetažení = změna pořadí, <strong>&times;</strong> = smazat vybranou.</li>
+              <li>Okno můžeš <strong>táhnout za hlavičku</strong> a přichytit k okraji; tlačítkem <strong>&#9662;</strong> ho sbalíš na tenký proužek.</li>
+              <li>L1 a L2 zůstávají loutky ovládané rukama; přidané loutky jsou statické (skládají se myší).</li>
+            </ul>
+          </section>
             <p class="help-note">Zavřít lze tlačítkem &times;, kliknutím mimo okno nebo klávesou Esc.</p>
           </section>
 
