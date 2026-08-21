@@ -1,6 +1,6 @@
 # Návod k obsluze — Motion Puppet Theater
 
-Webová aplikace, která přes webkameru sleduje ruce a ovládá jimi 2D loutky. Tento návod popisuje ovládání, hlavní režim, stop-motion režim, export a tvorbu vlastních loutek.
+Webová aplikace, která přes webkameru sleduje ruce a ovládá jimi 2D loutky. Tento návod popisuje ovládání, hlavní režim, stop-motion režim (včetně více loutek a záběrového rámečku), export a tvorbu vlastních loutek.
 
 ## 1. Začínáme
 
@@ -68,6 +68,17 @@ Zapni **Stop-motion** — dole se objeví časová osa. Figurky se okamžitě zo
 - **Onion (duch)** — vybraný snímek se průsvitně promítá přes živou scénu, takže přesně vidíš, jak na sebe nová póza navazuje.
 - **Mezerník** — uloží aktuální scénu jako snímek (ekvivalent tlačítka Snímek).
 
+### Více loutek na scéně (Správa loutek)
+
+L1 a L2 jsou loutky ovládané rukama (MediaPipe sleduje max. 2 ruce). K nim můžeš přidat **libovolný počet statických loutek** — hodí se pro scény s více postavami a rekvizitami.
+
+1. Vypni **Ruka** — vpravo nahoře se objeví plovoucí okno **Správa loutek**.
+2. **Přidat loutku** — v paletě klikni na postavu (přidá se do středu) nebo ji **přetáhni na scénu** na přesné místo. Paleta obsahuje Lišku, Robota, postavy z builderu i uložené v prohlížeči.
+3. **Loutky na scéně** — seznam vrstev: nahoře = vepředu. Klik = výběr (loutka se zvýrazní **zlatým kroužkem** kolem středu), přetažení = změna pořadí vrstev.
+4. Vybranou loutku **Smazat** nebo **Duplikovat** (tlačítka pod seznamem; při sbaleném okně v liště s počtem loutek).
+5. Okno je **pohyblivé** (tahej za hlavičku), lze ho **sbalit** na tenký proužek a přichytit k okraji. Kliknutí na loutku na scéně ji vždy vybere.
+6. Přidané loutky se pózují myší stejně jako L1/L2 (tělo = přesun, končetiny = natočení) a **ukládají se do snímků** i do projektu.
+
 ### Časová osa
 
 - **Snímek** — uloží aktuální scénu (obrázek i přesnou pózu loutek a pozadí).
@@ -93,17 +104,25 @@ Zapni **Stop-motion** — dole se objeví časová osa. Figurky se okamžitě zo
 - **Barva** — výběr vlastní barvy pozadí.
 - **Pruh** — nahraje velké pozadí (TilingSprite). Okno posouváš posuvníky **X** a **Y** (i svisle u 3×3 scény), nebo auto-posunem **Krok X/Y** po každém snímku.
 - **Kolečko myši** nad zeleným kroužkem končetiny = jemné otočení; nad hlavou = jemný posun nahoru/dolů.
-- Časová osa ukazuje najednou max. ~24 náhledů; u delších filmů šipky ‹ › a počítadlo `n/total`.
+- Časová osa ukazuje **všechny** náhledy (větší, ~160×112 px; proužek se posouvá šipkami ‹ › nebo tažením). Počítadlo `n/total`.
 - **Pruh 2** — nahraje **blízký** pás, který se posouvá rychleji — vzniká iluze hloubky (paralaxa).
 - **Paralaxa** — poměr rychlosti blízkého pásu vůči vzdálenému (default 1,6×; rozsah 1–5).
 - **Výchozí** — vrátí základní pozadí.
 - **Listí** — zapne řetěz listí (prop) sledující ruku (verlet fyzika — setrvačnost + gravitace, listy se třepotají).
+
+### Záběr (výřez exportu)
+
+- **Záběr** — zapne/vypne záběrový rámeček na scéně. Vymezuje výřez, který se **ukládá při exportu** (WebM, GIF i PNG ZIP) — export má přesně rozměry a poměr rámečku.
+- **Poměr** — předvolby stran: **Volný, 1:1, 4:3, 3:2, 16:9, 21:9, 9:16**. Se zvoleným poměrem drží rámeček aspekt při změně velikosti; **Volný** umožní vlastní poměr tažením.
+- **Ovládání rámečku:** tažením za **hranu** rámeček posuneš, tažením za **roh** (nebo úchyt uprostřed hrany) ho zvětšíš/zmenšíš. Uvnitř rámečku se loutky pózují normálně (rámeček je průhledný pro klikání).
+- Kolem rámečku se scéna ztlumí a uvnitř jsou vidět vodítka pravidla třetin + štítek s poměrem a rozměry.
 
 ## 5. Export animace
 
 - **WebM** — video z časové osy (MediaRecorder). Když je zapnutý **Theremin**, mixuje se do videa jako zvuk.
 - **GIF** — animovaný obrázek (256 barev, šířka max 1280 px, zpoždění podle FPS).
 - **PNG (ZIP)** — stáhne všechny snímky v původním rozlišení v ZIP archivu.
+- Je-li zapnutý **Záběr** (viz výše), všechny exporty jsou **oříznuté na rámeček**.
 
 Export probíhá v prohlížeči (žádný server) — data neodcházejí z počítače.
 
@@ -111,17 +130,17 @@ Export probíhá v prohlížeči (žádný server) — data neodcházejí z poč
 
 Na stránce `builder.html` (odkaz **Builder** v hlavní liště):
 
-1. Nahraj až 6 částí: **tělo** (povinné), **hlavu**, **levou/pravou paži**, **levou/pravou nohu**.
-2. Automaticky se odhadnou klouby (ramena, krk, kyčle) — klikáním je ručně uprav na náhledech.
-3. Pro každou část nastav **Pohyblivá / Statická** (statické části se při ovládání nehýbou).
+1. Nahraj až 10 částí: **tělo** (povinné), **hlavu**, **levou/pravou paži** (+ volitelné **předloktí**), **levou/pravou nohu** (+ volitelné **holeň**). Předloktí/holeň umožňují ohyb v lokti/koleni (dvoukostní IK).
+2. Automaticky se odhadnou klouby (ramena, krk, kyčle, lokty/kolena) — klikáním je ručně uprav na náhledech.
+3. Pro každou končetinu nastav **Pohyblivá / Statická** (statické části se při ovládání nehýbou). Předloktí/holeň se ohýbají automaticky podle horní části.
 4. Zkontroluj rozsah pohybu a klidovou polohu.
 5. Ulož:
-   - **Uložit do prohlížeče** — loutka se objeví v seznamu L1/L2 (jen v tomto prohlížeči, localStorage), nebo
+   - **Uložit do prohlížeče** — loutka se objeví v seznamu L1/L2 i v paletě „Správa loutek" (jen v tomto prohlížeči, localStorage), nebo
    - **Stáhnout config.json** — soubor s obrázky vloženými jako data URL; dá se sdílet nebo vložit do `public/characters/<id>/` pro sdílený seznam na webu.
 
 ### Formát rig loutky
 
-Config JSON popisuje 6 částí (`body`, `head`, `leftArm`, `rightArm`, `leftLeg`, `rightLeg`), pozice kloubů (`shoulderL/R`, `neck`, `hipL/R`), klidové úhly (`restAngle`, `restHandAngle`), rozsah pohybu a flag `movable`. Ověřuje ho `validateRigConfig` (unit testy v `src/rig.test.ts`).
+Config JSON popisuje části (`body`, `head`, `leftArm`, `rightArm`, `leftLeg`, `rightLeg` + volitelně `leftForearm`, `rightForearm`, `leftShin`, `rightShin`), pozice kloubů (`shoulderL/R`, `neck`, `hipL/R`), body `attach` (loket/koleno) a pivoty spodních částí, klidové úhly (`restAngle`, `restHandAngle`), rozsah pohybu a flag `movable`. Ověřuje ho `validateRigConfig` (unit testy v `src/rig.test.ts`).
 
 ## 7. Klávesové zkratky
 
@@ -141,5 +160,5 @@ Config JSON popisuje 6 částí (`body`, `head`, `leftArm`, `rightArm`, `leftLeg
 ## 9. Vývojáři
 
 - **Build:** `npm run build` (tsc + Vite), testy: `npm test` (Vitest), dev server: `npm run dev` (port 3000).
-- **Architektura:** `tracker.ts` (kamera + MediaPipe), `gestures.ts` (matematika, gesta — čisté funkce, unit testy), `renderer.ts` (Pixi.js scéna), `rig.ts` + `rigAssets.ts` (vystřihovánkové loutky), `simulator.ts` (simulace bez kamery), `theremin.ts` (zvuk), `recorder.ts` (nahrávání), `stopMotion.ts` (časová osa + export), `chainProp.ts` (řetěz listí), `builder.ts` (tvorba loutek).
+- **Architektura:** `tracker.ts` (kamera + MediaPipe), `gestures.ts` (matematika, gesta — čisté funkce, unit testy), `renderer.ts` (Pixi.js scéna, vč. multi-puppet a výběrového kroužku), `rig.ts` + `rigAssets.ts` (vystřihovánkové loutky, dvoukostní IK), `snapshot.ts` (migrace póz projektu), `simulator.ts` (simulace bez kamery), `theremin.ts` (zvuk), `recorder.ts` (nahrávání), `stopMotion.ts` (časová osa, „Správa loutek", „Záběr" + export), `chainProp.ts` (řetěz listí), `builder.ts` (tvorba loutek).
 - **Roadmapa a stav:** `PROJECT_STATE.md`.

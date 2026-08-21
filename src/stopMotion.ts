@@ -6,6 +6,8 @@ import { migrateStagePoseSnapshot } from './snapshot';
 export interface StopMotionFrame {
   id: string;
   dataUrl: string;
+  /** Small JPEG preview used by the strip (saves memory vs full PNG). */
+  thumb?: string;
   pose?: StagePoseSnapshot;
 }
 
@@ -73,8 +75,7 @@ export interface StopMotionElements {
   applyBackgroundAssets?: (assets: { stripFarDataUrl?: string; stripNearDataUrl?: string; customBgDataUrl?: string }) => Promise<void> | void;
 }
 
-/** Max full-size thumbs rendered at once; beyond this the strip is windowed. */
-const STRIP_WINDOW = 24;
+/** Beyond this frame count the strip thumbs shrink to fit more on screen. */
 const STRIP_DENSE_AT = 40;
 
 const ONION_ALPHA = 0.4;
@@ -194,8 +195,9 @@ export class StopMotionController {
       this.ghostCount = parseInt(this.elements.ghostSelect.value, 10) || 1;
       this.updateOnion();
     });
-    this.elements.stripPrev?.addEventListener('click', () => this.nudgeStripWindow(-STRIP_WINDOW));
-    this.elements.stripNext?.addEventListener('click', () => this.nudgeStripWindow(STRIP_WINDOW));
+    this.elements.stripPrev?.addEventListener('click', () => this.nudgeStripWindow(-1));
+    this.elements.stripNext?.addEventListener('click', () => this.nudgeStripWindow(1));
+    this.elements.strip.addEventListener('scroll', () => this.updateStripNavButtons());
 
     // Space bar captures a frame (capture phase so focused buttons don't
     // double-trigger and the page never scrolls).
@@ -277,6 +279,13 @@ export class StopMotionController {
       const id = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}`;
       this.frames.push({ id, dataUrl, pose });
       this.selectedIndex = this.frames.length - 1;
+      // Generate a small preview image for the strip (full PNG stays in memory
+      // for exports; the strip only needs a lightweight thumbnail).
+      void this.makeThumb(dataUrl).then((thumb) => {
+        const frame = this.frames.find((f) => f.id === id);
+        if (frame) frame.thumb = thumb;
+        if (this.selectedIndex === this.frames.length - 1) this.renderStrip();
+      });
       this.afterEdit();
       this.elements.onAfterSnap?.();
       this.elements.onStatus?.(`Snímek ${this.frames.length} uložen.`);
@@ -285,6 +294,31 @@ export class StopMotionController {
       console.error('Chyba při ukládání snímku:', err);
       this.elements.onStatus?.(`Chyba snímku: ${msg}`);
     }
+  }
+
+  /** Produces a small JPEG preview (max ~360px wide) for the timeline strip. */
+  private makeThumb(dataUrl: string): Promise<string> {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const MAX_W = 360;
+          const scale = Math.min(1, MAX_W / img.naturalWidth);
+          const w = Math.max(1, Math.round(img.naturalWidth * scale));
+          const h = Math.max(1, Math.round(img.naturalHeight * scale));
+          const c = document.createElement('canvas');
+          c.width = w;
+          c.height = h;
+          const ctx = c.getContext('2d')!;
+          ctx.drawImage(img, 0, 0, w, h);
+          resolve(c.toDataURL('image/jpeg', 0.82));
+        } catch {
+          resolve(dataUrl);
+        }
+      };
+      img.onerror = () => resolve(dataUrl);
+      img.src = dataUrl;
+    });
   }
 
   /** Loads the pose snapshot from the selected frame back onto the live stage. */
@@ -889,43 +923,29 @@ export class StopMotionController {
     this.elements.btnPlay.textContent = 'Přehrát';
   }
 
-  // --- Frame strip (windowed for large timelines) ---
+  // --- Frame strip (all frames, scrollable; arrows scroll it) ---
 
-  private stripWindowStart = 0;
-
+  /** Scrolls the strip by roughly one viewport width in the given direction. */
   private nudgeStripWindow(delta: number): void {
-    const total = this.frames.length;
-    if (total <= STRIP_WINDOW) {
-      this.stripWindowStart = 0;
-      this.renderStrip();
-      return;
-    }
-    const maxStart = Math.max(0, total - STRIP_WINDOW);
-    this.stripWindowStart = Math.max(0, Math.min(maxStart, this.stripWindowStart + delta));
-    this.renderStrip();
+    const strip = this.elements.strip;
+    const step = Math.max(300, Math.round(strip.clientWidth * 0.85));
+    strip.scrollBy({ left: delta * step, behavior: 'smooth' });
   }
 
-  /** Keeps the selected frame inside the visible window when possible. */
-  private ensureSelectionInWindow(): void {
-    const total = this.frames.length;
-    if (total <= STRIP_WINDOW) {
-      this.stripWindowStart = 0;
-      return;
+  private updateStripNavButtons(): void {
+    const strip = this.elements.strip;
+    if (this.elements.stripPrev) {
+      this.elements.stripPrev.disabled = strip.scrollLeft <= 1;
     }
-    const maxStart = Math.max(0, total - STRIP_WINDOW);
-    const sel = this.selectedIndex ?? total - 1;
-    if (sel < this.stripWindowStart) this.stripWindowStart = sel;
-    else if (sel >= this.stripWindowStart + STRIP_WINDOW) {
-      this.stripWindowStart = Math.min(maxStart, sel - STRIP_WINDOW + 1);
+    if (this.elements.stripNext) {
+      this.elements.stripNext.disabled = strip.scrollLeft >= strip.scrollWidth - strip.clientWidth - 1;
     }
-    this.stripWindowStart = Math.max(0, Math.min(maxStart, this.stripWindowStart));
   }
 
   private renderStrip(): void {
     const strip = this.elements.strip;
     strip.textContent = '';
     const total = this.frames.length;
-    this.ensureSelectionInWindow();
 
     strip.classList.toggle('dense', total >= STRIP_DENSE_AT);
 
@@ -936,19 +956,7 @@ export class StopMotionController {
       return;
     }
 
-    const windowed = total > STRIP_WINDOW;
-    const start = windowed ? this.stripWindowStart : 0;
-    const end = windowed ? Math.min(total, start + STRIP_WINDOW) : total;
-
-    if (windowed && start > 0) {
-      const gap = document.createElement('span');
-      gap.className = 'sm-frame-gap';
-      gap.textContent = `…1–${start}`;
-      gap.title = 'Starší snímky — použij šipku vlevo';
-      strip.appendChild(gap);
-    }
-
-    for (let index = start; index < end; index++) {
+    for (let index = 0; index < total; index++) {
       const frame = this.frames[index];
       const thumb = document.createElement('div');
       thumb.className = 'sm-frame-thumb';
@@ -958,7 +966,8 @@ export class StopMotionController {
       if (index === this.selectedIndex) thumb.classList.add('selected');
 
       const img = document.createElement('img');
-      img.src = frame.dataUrl;
+      // Prefer the lightweight preview so the strip stays fast with many frames.
+      img.src = frame.thumb || frame.dataUrl;
       img.alt = `Snímek ${index + 1}`;
 
       const label = document.createElement('span');
@@ -1025,22 +1034,11 @@ export class StopMotionController {
       strip.appendChild(thumb);
     }
 
-    if (windowed && end < total) {
-      const gap = document.createElement('span');
-      gap.className = 'sm-frame-gap';
-      gap.textContent = `…${end + 1}–${total}`;
-      gap.title = 'Novější snímky — použij šipku vpravo';
-      strip.appendChild(gap);
-    }
-
     const sel = (this.selectedIndex ?? 0) + 1;
     if (this.elements.stripMeta) {
-      this.elements.stripMeta.textContent = windowed
-        ? `${sel}/${total} · ${start + 1}–${end}`
-        : `${sel} / ${total}`;
+      this.elements.stripMeta.textContent = `${sel} / ${total}`;
     }
-    if (this.elements.stripPrev) this.elements.stripPrev.disabled = !windowed || start <= 0;
-    if (this.elements.stripNext) this.elements.stripNext.disabled = !windowed || end >= total;
+    this.updateStripNavButtons();
 
     const selectedEl = strip.querySelector('.sm-frame-thumb.selected') as HTMLElement | null;
     selectedEl?.scrollIntoView({ block: 'nearest', inline: 'nearest' });

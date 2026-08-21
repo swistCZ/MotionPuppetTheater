@@ -28,10 +28,17 @@
   - A **Prázdné (empty)** option hides the puppet for that hand so you can play with just one hand.
   - 💾 **Saved in the browser** – puppets built with the rig builder can be saved to `localStorage` and reappear in the character list on every visit.
 
+- **👥 Multiple Puppets on Stage (stop-motion)**
+  - Beyond the two live (hand-driven) puppets **L1/L2** you can add **any number of static puppets** via the floating **„Správa loutek"** panel (palette of saved characters → click or drag & drop onto the stage, layer list with z-order reordering, select/delete/duplicate, gold selection ring on stage, minimized control strip).
+  - MediaPipe tracks at most 2 hands, so live slots stay at L1/L2 — everything else is placed manually with the mouse in stop-motion.
+
+- **🎬 Export View Frame („Záběr")**
+  - A moveable/resizable crop frame over the stage defines the export region: preset aspect ratios (1:1, 4:3, 3:2, 16:9, 21:9, 9:16) or a free ratio dragged by the edges. The crop is applied to **WebM, GIF and PNG-ZIP** exports. Click-through so puppets can still be posed inside.
+
 - **🔧 Rig Builder** (`/builder.html`)
-  - Assemble a cut-out puppet from up to **six parts**: body, head, left/right arm, left/right leg.
-  - For each part choose whether it is **movable** or **static** (a switch per part).
-  - Place **joints** by clicking on the part image: shoulders, neck, hips (body); pivots (arms, legs); set rest angles for arms and legs.
+  - Assemble a cut-out puppet from up to **ten parts** for two-bone limbs: body, head, left/right arm + forearm, left/right leg + shin.
+  - For each limb choose whether it is **movable** or **static** (a switch per part); forearms/shin bend automatically via two-bone IK at the elbow/knee.
+  - Place **joints** by clicking on the part image: shoulders, neck, hips (body); pivots (arms, legs); elbows/knees + forearm/shin pivots; set rest angles for arms and legs.
   - Save the puppet **to the browser** (`localStorage`) or **export/import** the rig config as JSON.
   - Run the builder locally at `http://localhost:3000/builder.html`.
 
@@ -61,13 +68,22 @@
 - **🖼️ Custom Backgrounds**
   - Scenic color presets (Dark, Slate, Black, Scenic Blue, Forest Green) + custom image upload support.
 
+- **🎞️ Stop-Motion Assistant Mode**
+  - Pose puppets (hand tracking, mouse dragging, wheel fine-rotation) and snap frames with **Snímek** / **Space**.
+  - Timeline with thumbnails, onion skin (1–3 ghosts), registration grid, A/B flip, undo/redo, playback (loop/reverse, 12/24 FPS).
+  - Pan-able parallax background strips, chroma-key green, chain-prop (leaves), middle-finger camera zoom.
+  - **Export:** WebM/MP4, GIF, PNG-ZIP — all honoring the **„Záběr"** crop frame. Save/open projects as `.mpt`.
+
+- **🪟 Browser-Window-Free Testing** (developer)
+  - All headless verification runs on the background with `--headless=new`; Vite 6's `vite preview` is forced to `preview.open: false` so no browser tab ever opens during tests.
+
 ---
 
 ## 🎭 Creating Your Own Puppet (Builder Workflow)
 
 1. Open the builder at `http://localhost:3000/builder.html` (or via the **Builder** button in the app).
-2. **Díly loutky** – upload up to six part images (body, head, arms, legs). Each part can be toggled **movable / static**.
-3. **Klouby a úhly** – select a joint and click into the part image to place it (shoulders, neck, hips, pivots). Set rest angles for arms and legs.
+2. **Díly loutky** – upload up to ten part images (body, head, arms + forearms, legs + shins). Each limb can be toggled **movable / static**.
+3. **Klouby a úhly** – select a joint and click into the part image to place it (shoulders, neck, hips, pivots, elbows/knees, forearm/shin pivots). Set rest angles for arms and legs.
 4. **Identita / Pohyb a měřítko** – give the puppet a name, scale, and arm responsiveness.
 5. **Uložit a sdílet** – save to the browser (appears in the character list) or export/import the config as JSON.
 6. Share puppets by committing a character folder (e.g. `public/characters/<id>/` with `config.json` + part SVGs) — the Vite plugin registers it automatically.

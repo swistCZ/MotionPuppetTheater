@@ -139,4 +139,48 @@
   * **[x] Živé loutky L1/L2 v seznamu (DONE 2026-08-21)**: seznam vrstev teď zahrnuje i výchozí (živé) loutky L1/L2 (označené „· ruce") — lze je vybrat (zlatý kroužek), duplikovat, smazat (nastaví se na „Prázdné") i přerovnat. Renderer generalizoval: `getStagePuppets()`, `getPuppetContainer(id)`, `puppetIdOf()`, `setSelectedPuppet()`, `removePuppet()`, `duplicatePuppet()`, `reorderPuppets()`; `onPuppetSelect` callback.
   * **[x] Ikony minimalizovaného proužku (DONE 2026-08-21)**: duplikace = SVG ikona kopírování (dva obdélníky), smazání = SVG ikona popelnice.
   * **[x] Záběr (view frame / crop) ve stop-motion (DONE 2026-08-21)**: tlačítko „Záběr" ve spodní liště + výběr poměru stran (Volný, 1:1, 4:3, 3:2, 16:9, 21:9, 9:16). Zapnutý režim zobrazí rámeček na scéně: **tah za hranu = posun rámečku**, **rohy / středy hran = změna velikosti** (s poměrem se drží aspekt, při „Volný" volně). Rámeček je klikací průhledný (loutky se pózují i uvnitř); hit-testing hran/úchytů v capture fázi na rodičovském elementu. Výřez se promítá do **exportů WebM/GIF/PNG ZIP** (`getCropRect`, `drawFrameToCanvas`). Overlay `sm-frame-canvas`, dimming mimo rámeček, pravidla třetin, údaj poměru/velikosti. Ověřeno headless: poměr, posun, resize s aspektem i volně, crop v exportu.
+  * **[x] Proužek snímků – větší náhledy + funkční šipky (DONE 2026-08-21)**: náhledy ~2× (160×112, dense 96×72; lišta narostla na 132px). Proužek teď vykresluje **všechny snímky** (scrollovatelně) místo okénka 24 s „…" mezerami; každý snímek má při snapu generovaný **malý JPEG náhled** (`frame.thumb`, `makeThumb`) — proužek je rychlý a šetří paměť (plná PNG data zůstávají jen pro export). Šipky **scrollují** proužek o ~85 % šířky a správně se deaktivují na kraji (`updateStripNavButtons` na `scroll` eventu). Ověřeno headless.
   * [ ] Rozšíření do hlavního režimu (L1/L2 zůstávají živé; MediaPipe `maxNumHands: 2` → max 2 živé).
+
+### PLÁN: Správa souborů / pracovní složka (workspace) — navrženo 2026-08-21
+
+**Cíl uživatele:** vybrat si na PC složku, ve které se bude vše ukládat a načítat:
+1. **Builder** → nahraje podložky/rozřezané postavy z té složky, narigguje, uloží postavu zpět do téže složky.
+2. **Stop-motion + myš** → v okně „Správa loutek" si nalistuje do připravené složky a vidí všechny připravené postavy; načte je na scénu.
+3. **Projekty** → ukládají se do téže složky (všechny soubory na jednom místě).
+4. Vysvětlit/optimalizovat, kam se kam ukládá (dnes snímek mezerníkem nemá viditelný cíl — je jen data-URL v paměti prohlížeče).
+
+**Současný stav (fakta):**
+- Postavy z builderu: `saveLocalCharacter` → `localStorage` (`mpt.character.<id>`), obrázky jako **data-URL** (JSON). Načítají se přes `listLocalCharacterIds` / `loadLocalCharacterConfig`. Export = stažený `config.json` (taky s data-URL obrázky).
+- Sdílené postavy: `public/characters/<id>/config.json` (soubor v repo, seznam generuje plugin).
+- Snímky stop-motion: jen **v paměti** jako PNG data-URL v `this.frames[]`; cesta uložení neexistuje (export = stažení WebM/GIF/ZIP). `.mpt` projekt = stažený soubor.
+- Builder nahrávání dílů: `<input type=file>` (systémový dialog, bez trvalé složky).
+
+**Návrh: „Pracovní složka" přes File System Access API (`showDirectoryPicker`)**
+- Tlačítko „Vybrat složku" → `FileSystemDirectoryHandle` uložený do `IndexedDB` (přežije obnovení stránky) → celá app se k ní vrací.
+- Konvence adresářů ve složce:
+  - `postavy/<id>/config.json` + obrázky (rozřezané díly + případně hotové rigy z builderu)
+  - `projekty/*.mpt` (stop-motion projekty)
+  - `snimky/*.png` (automatické ukládání snímků při „Snímek"/mezerník — viditelný cíl, uživatel ví, kam to jde)
+  - `export/*.webm|gif|png` (volitelně exporty)
+- **Builder:** vedle nahrávání přes dialog i „Načíst z pracovní složky" (výběr dílu ze složky) a „Uložit do pracovní složky" (zapíše `postavy/<id>/config.json` + obrázky, čitelně, bez data-URL — na rozdíl od localStorage).
+- **Správa loutek:** nový zdroj „Pracovní složka" — prochází `postavy/`, ukazuje náhledy postav (config + díly ze složky), klik/drag přidá na scénu. Stejně jako dnesko s localStorage, ale z disku.
+- **Stop-motion:** „Uložit projekt" / „Otevřít projekt" cílí do `projekty/`; přepínač „Auto-snímek do složky" píše PNG snímky do `snimky/`.
+- **Kompatibilita:** staré zdroje zůstávají (repo `characters/`, localStorage) — pracovní složka je další zdroj nahoře v seznamu.
+
+**Optimalizace paměti:**
+- Postavy v localStorage/JSON drží obrázky jako data-URL → u pracovní složky používat **cesty k souborům** (config bez obrázků), načítat na vyžádání.
+- Snímky stop-motion drží full-res PNG data-URL → volitelně thumbnail (malý JPEG/WebP) pro proužek + plná data jen pro vybraný/export (snížení paměti při desítkách snímků).
+- Při odebírání loutky ze scény se uvolňují textury (`destroy`), už hotovo — dopsat logiku pro pracovní složku stejným vzorem.
+
+**Implementace (vstupní body):**
+- Nový modul `src/workspace.ts`: `pickWorkspace()`, `getWorkspaceHandle()` (IndexedDB), `readText/readImage/writeText/writeBlob/listEntries`, konvence cest (`postavy/`, `projekty/`, `snimky/`).
+- `builder.ts`: „Načíst z/uložit do složky" pro díly i config.
+- `main.ts` + „Správa loutek": zdroj „Pracovní složka" v paletě.
+- `stopMotion.ts`: ukládání projektu a snímků do složky; `snapFrame` zapíše PNG, když je přepínač.
+- Ověření: tsc + vitest (unit pro workspace path konvence / čtení-zápis bez UI) + build + headless na pozadí (žádná okna).
+
+**Otevřené otázky k doladění:**
+- File System Access API funguje v Chromium/Edge; Firefox/Safari nepodporují `showDirectoryPicker` — fallback na dialog `<input webkitdirectory>` nebo na zachování stávajících zdrojů.
+- Má pracovní složka být default pro *všechno* (builder + stop-motion), nebo per-obrazovka? (Návrh: jedna globální složka, sdílená.)
+- Auto-ukládání snímků zapnuto defaultně, nebo jen když si uživatel složku vybere?
